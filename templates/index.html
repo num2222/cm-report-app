@@ -1,0 +1,985 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CM Daily Report — ท่าอากาศยานสุวรรณภูมิ</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Sarabun', 'Segoe UI', sans-serif; background: #f4f6f9; color: #222; font-size: 14px; }
+nav { background: #1a3a5c; color: #fff; display: flex; align-items: center; padding: 0 16px; height: 52px; gap: 0; overflow-x: auto; }
+nav .brand { font-size: 14px; font-weight: 600; margin-right: 20px; white-space: nowrap; }
+nav .brand span { color: #5bb8ff; }
+.nav-btn { background: none; border: none; color: #aac8e8; cursor: pointer; padding: 0 12px; height: 52px; font-size: 13px; font-family: inherit; border-bottom: 3px solid transparent; white-space: nowrap; }
+.nav-btn:hover { color: #fff; }
+.nav-btn.active { color: #fff; border-bottom-color: #5bb8ff; }
+.page { display: none; padding: 20px; max-width: 1280px; margin: 0 auto; }
+.page.active { display: block; }
+.card { background: #fff; border-radius: 8px; border: 1px solid #dde3ea; padding: 16px 20px; margin-bottom: 16px; }
+.card-title { font-size: 13px; font-weight: 600; color: #1a3a5c; margin-bottom: 12px; text-transform: uppercase; letter-spacing: .5px; }
+.stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; margin-bottom: 18px; }
+.stat { background: #fff; border: 1px solid #dde3ea; border-radius: 8px; padding: 12px 14px; text-align: center; }
+.stat-num { font-size: 26px; font-weight: 600; color: #1a3a5c; }
+.stat-label { font-size: 11px; color: #777; margin-top: 2px; }
+.stat.green .stat-num { color: #1e7e4a; }
+.stat.red .stat-num { color: #c0392b; }
+.stat.orange .stat-num { color: #d97706; }
+.kpi-section { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 18px; }
+.kpi-card { background: #fff; border: 1px solid #dde3ea; border-radius: 8px; padding: 14px; }
+.kpi-card h4 { font-size: 12px; color: #666; margin-bottom: 8px; font-weight: 500; }
+.kpi-bar-wrap { margin-bottom: 6px; }
+.kpi-bar-label { display: flex; justify-content: space-between; font-size: 11px; margin-bottom: 2px; }
+.kpi-bar-bg { background: #f0f0f0; border-radius: 4px; height: 7px; }
+.kpi-bar-fill { height: 7px; border-radius: 4px; }
+.kpi-bar-fill.pass { background: #1e7e4a; }
+.kpi-bar-fill.fail { background: #c0392b; }
+.area-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; }
+.form-group { display: flex; flex-direction: column; gap: 4px; }
+.form-group label { font-size: 12px; color: #555; font-weight: 500; }
+.form-group input, .form-group select, .form-group textarea { padding: 7px 10px; border: 1px solid #ccd4de; border-radius: 6px; font-size: 13px; font-family: inherit; background: #fff; }
+.form-group input:focus, .form-group select:focus { outline: none; border-color: #5bb8ff; box-shadow: 0 0 0 2px #dbeeff; }
+.form-group.full { grid-column: 1 / -1; }
+.btn { padding: 7px 16px; border-radius: 6px; border: none; cursor: pointer; font-size: 13px; font-family: inherit; font-weight: 500; }
+.btn-primary { background: #1a3a5c; color: #fff; }
+.btn-primary:hover { background: #15304d; }
+.btn-success { background: #1e7e4a; color: #fff; }
+.btn-success:hover { background: #18693e; }
+.btn-danger { background: #c0392b; color: #fff; }
+.btn-danger:hover { background: #a93226; }
+.btn-outline { background: #fff; border: 1px solid #ccd4de; color: #444; }
+.btn-outline:hover { background: #f4f6f9; }
+.btn-sm { padding: 4px 10px; font-size: 12px; }
+.tbl-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 12px; }
+th { background: #1a3a5c; color: #fff; padding: 8px 10px; text-align: left; white-space: nowrap; font-weight: 500; }
+td { padding: 7px 10px; border-bottom: 1px solid #eef0f3; vertical-align: top; }
+tr:hover td { background: #f7f9fc; }
+.badge { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 11px; font-weight: 500; }
+.badge-pass { background: #d4edda; color: #1e7e4a; }
+.badge-fail { background: #f8d7da; color: #c0392b; }
+.badge-na { background: #e9ecef; color: #666; }
+.badge-pending { background: #fff3cd; color: #856404; }
+.badge-mtb { background: #dbeeff; color: #1a3a5c; }
+.badge-z2 { background: #e8f5e9; color: #1e7e4a; }
+.badge-fz { background: #fff3e0; color: #d97706; }
+.badge-sat1 { background: #f3e5f5; color: #7b1fa2; }
+.date-filter { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; flex-wrap: wrap; }
+.date-filter label { font-size: 13px; color: #555; }
+.date-filter input, .date-filter select { padding: 6px 10px; border: 1px solid #ccd4de; border-radius: 6px; font-size: 13px; font-family: inherit; }
+textarea.paste-box { width: 100%; height: 200px; font-family: 'Courier New', monospace; font-size: 12px; background: #0d1117; color: #58d68d; border: 1px solid #2d4a2d; border-radius: 6px; padding: 12px; resize: vertical; }
+.modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 100; align-items: center; justify-content: center; }
+.modal-overlay.open { display: flex; }
+.modal { background: #fff; border-radius: 10px; padding: 24px; width: 720px; max-width: 95vw; max-height: 90vh; overflow-y: auto; }
+.modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+.modal-header h3 { font-size: 15px; color: #1a3a5c; }
+.modal-close { background: none; border: none; font-size: 20px; cursor: pointer; color: #888; }
+.alert { padding: 10px 14px; border-radius: 6px; margin-bottom: 10px; font-size: 13px; }
+.alert-success { background: #d4edda; color: #1e7e4a; border: 1px solid #c3e6cb; }
+.alert-error { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+.alert-info { background: #dbeeff; color: #1a3a5c; border: 1px solid #b8d6f0; }
+.section-title { font-size: 13px; font-weight: 600; color: #1a3a5c; padding: 6px 0 5px; border-bottom: 2px solid #1a3a5c; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center; }
+.no-data { text-align: center; color: #aaa; padding: 36px; font-size: 13px; }
+.parsed-preview { background: #f7f9fc; border: 1px solid #dde3ea; border-radius: 6px; padding: 12px; margin: 10px 0; }
+.parsed-row { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+.parsed-field { background: #fff; border: 1px solid #e0e4ea; border-radius: 4px; padding: 3px 8px; font-size: 12px; }
+.parsed-field span { color: #888; }
+.tab-bar { display: flex; gap: 8px; margin-bottom: 14px; }
+.tab-btn { padding: 6px 16px; border-radius: 20px; border: 1px solid #ccd4de; background: #fff; cursor: pointer; font-size: 13px; font-family: inherit; }
+.tab-btn.active { background: #1a3a5c; color: #fff; border-color: #1a3a5c; }
+.debug-box { background: #fffbea; border: 1px solid #fde68a; border-radius: 6px; padding: 10px 14px; margin-bottom: 10px; font-size: 12px; color: #92400e; }
+@media(max-width:600px) { .kpi-section { grid-template-columns: 1fr; } .area-grid { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="brand">⚡ CM Report <span>LV System</span></div>
+  <button class="nav-btn active" onclick="showPage('dashboard',this)">Dashboard</button>
+  <button class="nav-btn" onclick="showPage('input',this)">บันทึกเคส</button>
+  <button class="nav-btn" onclick="showPage('cases',this)">รายการเคส</button>
+  <button class="nav-btn" onclick="showPage('summary',this)">สรุปรายเดือน</button>
+  <button class="nav-btn" onclick="showPage('pending',this)">ค้างดำเนินการ</button>
+</nav>
+<div id="loading-bar" style="display:none;background:#1a3a5c;color:#fff;text-align:center;padding:6px;font-size:12px;">
+  <span id="loading-msg">กำลังโหลด...</span>
+</div>
+
+<!-- DASHBOARD -->
+<div id="page-dashboard" class="page active">
+  <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap;">
+    <h2 style="font-size:16px;color:#1a3a5c;">รายงานประจำวัน</h2>
+    <div class="date-filter" style="margin:0;">
+      <label>วันที่</label>
+      <input type="date" id="dash-date" onchange="renderDashboard()">
+      <button class="btn btn-outline btn-sm" onclick="document.getElementById('dash-date').value='';renderDashboard()">แสดงทั้งหมด</button>
+    </div>
+    <button class="btn btn-outline btn-sm" onclick="exportDailyCSV()">📥 CSV</button>
+    <button class="btn btn-success btn-sm" onclick="exportDailyExcel(event)">📊 Export Excel</button>
+  </div>
+  <div id="dash-debug" style="display:none;" class="debug-box"></div>
+  <div id="dash-stats" class="stats-grid"></div>
+  <div class="kpi-section" id="dash-kpi"></div>
+  <div class="area-grid" id="area-cards"></div>
+</div>
+
+<!-- INPUT -->
+<div id="page-input" class="page">
+  <div class="tab-bar">
+    <button class="tab-btn active" id="tb-paste" onclick="showTab('paste')">📋 วาง Line Message</button>
+    <button class="tab-btn" id="tb-manual" onclick="showTab('manual')">✏️ กรอกเอง</button>
+  </div>
+
+  <div id="tab-paste">
+    <div class="card">
+      <div class="card-title">วางข้อความจาก Line</div>
+      <div class="alert alert-info">วางข้อความจาก Line Group แล้วกด "แปลง" ระบบจะดึงข้อมูลอัตโนมัติ</div>
+      <div style="margin-bottom:10px;">
+        <label style="font-size:12px;color:#555;font-weight:500;">พื้นที่</label>
+        <select id="paste-area" style="padding:6px 10px;border:1px solid #ccd4de;border-radius:6px;font-size:13px;margin-left:8px;font-family:inherit;">
+          <option value="MTB">MTB</option><option value="Z2">Z2</option><option value="FZ">FZ</option><option value="SAT1">SAT1</option>
+        </select>
+      </div>
+      <textarea class="paste-box" id="line-text" placeholder="MTB_10&#10;วันที่ : 10/06/69&#10;เวลารับแจ้ง :19:39น.&#10;KPI : 1.5&#10;เวลาตอบรับ: 20นาที&#10;มาตรฐานเวลา :5-30นาที&#10;ปัญหาหน้างาน: หลอดไฟยาวดับ 1 หลอด&#10;บริเวณ : ทิศเหนือ หน้าสุขาชาย-หญิง&#10;เลขที่ใบงาน :1317998&#10;เลขที่ SAP : 10367952&#10;ผู้รับแจ้ง : ขนิษฐา&#10;ช่างผู้ทำการซ่อม : บุญนิธิกับปราโมทย์&#10;เวลาที่ถึงหน้างาน:19:53&#10;เวลาเริ่มการแก้ไข:19:53&#10;เวลาปิดงาน : 19:58&#10;การแก้ไข : เปลี่ยนหลอด LED T8 18W&#10;เวลาอนุมัติการซ่อม : 19:43"></textarea>
+      <div style="margin-top:10px;display:flex;gap:8px;">
+        <button class="btn btn-primary" onclick="parseLine()">🔍 แปลงและตรวจสอบ</button>
+        <button class="btn btn-outline" onclick="clearPaste()">ล้าง</button>
+      </div>
+      <div id="parse-result"></div>
+    </div>
+  </div>
+
+  <div id="tab-manual" style="display:none;">
+    <div class="card">
+      <div class="card-title">กรอกข้อมูลเคส</div>
+      <div class="form-grid">
+        <div class="form-group"><label>พื้นที่ *</label><select id="f-area"><option value="MTB">MTB</option><option value="Z2">Z2</option><option value="FZ">FZ</option><option value="SAT1">SAT1</option></select></div>
+        <div class="form-group"><label>วันที่รับแจ้ง *</label><input type="date" id="f-date"></div>
+        <div class="form-group"><label>ลำดับเคสต่อวัน</label><input type="number" id="f-seq" placeholder="10"></div>
+        <div class="form-group"><label>เลขที่ใบงาน</label><input type="text" id="f-jobno" placeholder="1317998"></div>
+        <div class="form-group"><label>เลขที่ SAP *</label><input type="text" id="f-sapno" placeholder="10367952"></div>
+        <div class="form-group"><label>เวลารับแจ้ง</label><input type="time" id="f-notify-time"></div>
+        <div class="form-group"><label>KPI (ค่า)</label><input type="number" id="f-kpi-val" step="0.5" placeholder="1.5"></div>
+        <div class="form-group"><label>เวลาตอบรับ</label><input type="text" id="f-response-time" placeholder="20นาที"></div>
+        <div class="form-group"><label>มาตรฐานเวลา</label>
+          <select id="f-std">
+            <option value="">-- เลือก --</option>
+            <option value="A">A = 5-30 นาที</option>
+            <option value="B">B = 1-3 ชม.</option>
+            <option value="C">C = 3 ชม. - 1 วัน</option>
+            <option value="D">D = 1-7 วัน</option>
+            <option value="E">E = 7-14 วัน</option>
+            <option value="F">F = 1 เดือน</option>
+          </select>
+        </div>
+        <div class="form-group"><label>เวลาอนุมัติการซ่อม</label><input type="time" id="f-approve-time"></div>
+        <div class="form-group"><label>เวลาที่ถึงหน้างาน</label><input type="time" id="f-arrive-time"></div>
+        <div class="form-group"><label>เวลาเริ่มการแก้ไข</label><input type="time" id="f-start-time"></div>
+        <div class="form-group"><label>เวลาปิดงาน</label><input type="time" id="f-close-time"></div>
+        <div class="form-group"><label>KPI3 ดุลพินิจ</label>
+          <select id="f-kpi3"><option value="">-- ยังไม่กำหนด --</option><option value="pass">ผ่าน</option><option value="fail">ไม่ผ่าน</option></select>
+        </div>
+        <div class="form-group full"><label>บริเวณ / สถานที่</label><input type="text" id="f-location" placeholder="ทิศเหนือ หน้าสุขาชาย-หญิง"></div>
+        <div class="form-group full"><label>ปัญหาหน้างาน</label><input type="text" id="f-problem" placeholder="หลอดไฟยาวดับ 1 หลอด"></div>
+        <div class="form-group full"><label>การแก้ไข</label><input type="text" id="f-solution" placeholder="เปลี่ยนหลอด LED T8 18W 6500K"></div>
+        <div class="form-group"><label>ผู้แจ้ง</label><input type="text" id="f-reporter"></div>
+        <div class="form-group"><label>ผู้รับแจ้ง</label><input type="text" id="f-receiver"></div>
+        <div class="form-group"><label>ช่างผู้ซ่อม</label><input type="text" id="f-technician"></div>
+      </div>
+      <div style="margin-top:14px;display:flex;gap:8px;">
+        <button class="btn btn-success" onclick="saveCase()">💾 บันทึกเคส</button>
+        <button class="btn btn-outline" onclick="clearForm()">ล้างแบบฟอร์ม</button>
+      </div>
+      <div id="save-msg"></div>
+    </div>
+  </div>
+</div>
+
+<!-- CASES -->
+<div id="page-cases" class="page">
+  <div class="date-filter">
+    <label>พื้นที่</label>
+    <select id="filter-area" onchange="renderCases()">
+      <option value="ALL">ทุกพื้นที่</option><option value="MTB">MTB</option><option value="Z2">Z2</option><option value="FZ">FZ</option><option value="SAT1">SAT1</option>
+    </select>
+    <label>จากวันที่</label><input type="date" id="filter-from" onchange="renderCases()">
+    <label>ถึงวันที่</label><input type="date" id="filter-to" onchange="renderCases()">
+    <button class="btn btn-outline btn-sm" onclick="clearFilters()">ล้าง</button>
+    <span id="case-count" style="font-size:12px;color:#888;"></span>
+  </div>
+  <div class="card" style="padding:0;overflow:hidden;">
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr><th>พื้นที่</th><th>วันที่</th><th>ลำดับ</th><th>Job No.</th><th>SAP No.</th><th>เวลาแจ้ง</th><th>บริเวณ</th><th>ปัญหา</th><th>KPI1</th><th>KPI2</th><th>KPI3</th><th>ปิดงาน</th><th>จัดการ</th></tr></thead>
+        <tbody id="cases-tbody"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- SUMMARY -->
+<div id="page-summary" class="page">
+  <div class="date-filter">
+    <label>เดือน</label><input type="month" id="summary-month" onchange="renderSummary()">
+    <label>พื้นที่</label>
+    <select id="summary-area" onchange="renderSummary()">
+      <option value="ALL">ทุกพื้นที่</option><option value="MTB">MTB</option><option value="Z2">Z2</option><option value="FZ">FZ</option><option value="SAT1">SAT1</option>
+    </select>
+    <button class="btn btn-outline btn-sm" onclick="exportMonthlyCSV()">📥 CSV</button>
+    <button class="btn btn-success btn-sm" onclick="exportMonthlyExcel(event)">📊 Export Excel</button>
+  </div>
+  <div id="summary-content"></div>
+</div>
+
+<!-- PENDING -->
+<div id="page-pending" class="page">
+  <div class="date-filter">
+    <label>เดือน</label><input type="month" id="pending-month" onchange="renderPending()">
+    <label>พื้นที่</label>
+    <select id="pending-area" onchange="renderPending()">
+      <option value="ALL">ทุกพื้นที่</option><option value="MTB">MTB</option><option value="Z2">Z2</option><option value="FZ">FZ</option><option value="SAT1">SAT1</option>
+    </select>
+  </div>
+  <div id="pending-content"></div>
+</div>
+
+<!-- EDIT MODAL -->
+<div class="modal-overlay" id="edit-modal">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>แก้ไขเคส</h3>
+      <button class="modal-close" onclick="closeModal()">✕</button>
+    </div>
+    <div class="form-grid" id="edit-form-fields"></div>
+    <div style="margin-top:14px;display:flex;gap:8px;">
+      <button class="btn btn-success" onclick="saveEdit()">💾 บันทึก</button>
+      <button class="btn btn-outline" onclick="closeModal()">ยกเลิก</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ─── DB ───────────────────────────────────────────────
+let db = [];
+let editingId = null;
+const API = '';  // same origin
+
+async function loadAllCases() {
+  try {
+    const r = await fetch(API + '/api/cases');
+    if(r.ok) { db = await r.json(); }
+  } catch(e) { console.error('loadAllCases:', e); }
+}
+
+async function apiPost(path, data) {
+  const r = await fetch(API + path, {
+    method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(data)
+  });
+  if(!r.ok) { const e=await r.json(); throw new Error(e.error||r.statusText); }
+  return r.json();
+}
+
+async function apiPut(path, data) {
+  const r = await fetch(API + path, {
+    method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify(data)
+  });
+  if(!r.ok) { const e=await r.json(); throw new Error(e.error||r.statusText); }
+  return r.json();
+}
+
+async function apiDelete(path) {
+  const r = await fetch(API + path, {method:'DELETE'});
+  if(!r.ok) throw new Error(r.statusText);
+  return r.json();
+}
+
+function showLoading(msg='กำลังโหลด...') {
+  document.getElementById('loading-bar').style.display='block';
+  document.getElementById('loading-msg').textContent = msg;
+}
+function hideLoading() {
+  document.getElementById('loading-bar').style.display='none';
+}
+
+// ─── NAV ──────────────────────────────────────────────
+function showPage(p, btn) {
+  document.querySelectorAll('.page').forEach(x => x.classList.remove('active'));
+  document.querySelectorAll('.nav-btn').forEach(x => x.classList.remove('active'));
+  document.getElementById('page-' + p).classList.add('active');
+  if(btn) btn.classList.add('active');
+  showLoading('กำลังโหลด...');
+  loadAllCases().then(()=>{ hideLoading();
+    if(p==='dashboard') renderDashboard();
+    if(p==='cases') renderCases();
+    if(p==='summary') renderSummary();
+    if(p==='pending') renderPending();
+  });
+}
+function showTab(t) {
+  document.getElementById('tab-paste').style.display = t==='paste' ? 'block' : 'none';
+  document.getElementById('tab-manual').style.display = t==='manual' ? 'block' : 'none';
+  document.getElementById('tb-paste').className = 'tab-btn' + (t==='paste' ? ' active' : '');
+  document.getElementById('tb-manual').className = 'tab-btn' + (t==='manual' ? ' active' : '');
+}
+
+// ─── TIME UTILS ───────────────────────────────────────
+function toMin(t) {
+  if(!t || typeof t !== 'string') return null;
+  const p = t.trim().split(':');
+  if(p.length < 2) return null;
+  const h = parseInt(p[0]), m = parseInt(p[1]);
+  if(isNaN(h) || isNaN(m)) return null;
+  return h * 60 + m;
+}
+
+// KPI1: เวลาอนุมัติการซ่อม + เวลาตอบรับ (นาที) ≥ เวลาถึงหน้างาน → Pass
+// เช่น อนุมัติ 19:43 + ตอบรับ 20 นาที = deadline 20:03
+// ถึงหน้างาน 19:53 < 20:03 → Pass
+// ถ้าไม่มี responseTime ให้ fallback เปรียบเทียบ arriveTime <= approveTime
+function parseResponseMinutes(raw) {
+  if(!raw) return null;
+  // รูปแบบ "20นาที", "20 นาที", "1.5", "1ชม", "1 ชม 30 นาที"
+  const mMin = raw.match(/(\d+(?:\.\d+)?)\s*นาที/);
+  if(mMin) return parseFloat(mMin[1]);
+  const mHr = raw.match(/(\d+(?:\.\d+)?)\s*ชม/);
+  const mHrMin = raw.match(/(\d+)\s*ชม.*?(\d+)\s*นาที/);
+  if(mHrMin) return parseInt(mHrMin[1]) * 60 + parseInt(mHrMin[2]);
+  if(mHr) return parseFloat(mHr[1]) * 60;
+  const mNum = raw.match(/^(\d+(?:\.\d+)?)$/);
+  if(mNum) return parseFloat(mNum[1]);
+  return null;
+}
+
+function calcKPI1(notifyTime, arriveTime, responseTime, approveTime) {
+  const arrive = toMin(arriveTime);
+  if(arrive === null) return null;
+  const respMin = parseResponseMinutes(responseTime);
+  if(respMin !== null) {
+    // deadline = เวลาอนุมัติการซ่อม + เวลาตอบรับ
+    const approve = toMin(approveTime);
+    if(approve !== null) {
+      const deadline = approve + respMin;
+      return arrive <= deadline ? 'pass' : 'fail';
+    }
+  }
+  // fallback: ไม่มี responseTime หรือ approveTime
+  return null;
+}
+
+// KPI2: เวลาปิดงาน - เวลาเริ่มการแก้ไข ไม่เกินมาตรฐาน
+function calcKPI2(startTime, closeTime, std) {
+  const a = toMin(startTime), b = toMin(closeTime);
+  if(a === null || b === null || !std) return null;
+  const diff = b >= a ? b - a : b + 1440 - a; // handle overnight
+  const lim = {A:30, B:180, C:1440, D:10080, E:20160, F:43200}[std];
+  if(!lim) return null;
+  return diff <= lim ? 'pass' : 'fail';
+}
+
+function pct(a, b) { return b ? Math.round(a / b * 100) : 0; }
+
+// ─── DATE FORMAT ──────────────────────────────────────
+// เก็บเป็น YYYY-MM-DD (ISO) เสมอ
+function fmtDate(d) {
+  if(!d) return '';
+  const p = d.split('-');
+  if(p.length !== 3) return d;
+  return `${p[2]}/${p[1]}/${String(parseInt(p[0]) + 543).slice(-2)}`;
+}
+
+// แปลง วันที่ไทย dd/mm/yy หรือ dd/mm/yyyy (BE) → ISO YYYY-MM-DD
+function parseThaiDate(raw) {
+  if(!raw) return '';
+  raw = raw.trim();
+  const p = raw.split('/');
+  if(p.length !== 3) return '';
+  let yr = parseInt(p[2]);
+  // พ.ศ. 2 หลัก เช่น 69 → 2569 → 2026
+  if(yr < 100) yr = yr + 2500;
+  // พ.ศ. → ค.ศ.
+  if(yr > 2400) yr = yr - 543;
+  const mo = p[1].padStart(2, '0');
+  const day = p[0].padStart(2, '0');
+  return `${yr}-${mo}-${day}`;
+}
+
+function parseTime(raw) {
+  if(!raw) return '';
+  raw = raw.trim().replace(/น\.?$/, '').trim();
+  let m = raw.match(/^(\d{1,2}):(\d{2})/);
+  if(m) return m[1].padStart(2,'0') + ':' + m[2];
+  m = raw.match(/^(\d{1,2})\.(\d{2})/);
+  if(m) return m[1].padStart(2,'0') + ':' + m[2];
+  return '';
+}
+
+// ─── PARSE LINE ───────────────────────────────────────
+function parseLine() {
+  const txt = document.getElementById('line-text').value.trim();
+  const area = document.getElementById('paste-area').value;
+  if(!txt) { alert('กรุณาวางข้อความก่อน'); return; }
+
+  function extract(key) {
+    // match "key : value" or "key:value"
+    const re = new RegExp(key + '\\s*:\\s*(.+)', 'i');
+    const m = txt.match(re);
+    if(m) return m[1].trim();
+    return '';
+  }
+
+  const dateISO = parseThaiDate(extract('วันที่'));
+  const seqM = txt.match(/[A-Z]+_(\d+)/);
+  const seq = seqM ? seqM[1] : '';
+
+  const approveRaw = extract('เวลาอนุมัติการซ่อม');
+  const arriveRaw = extract('เวลาที่ถึงหน้างาน');
+  const startRaw = extract('เวลาเริ่มการแก้ไข');
+  const closeRaw = extract('เวลาปิดงาน');
+  const notifyRaw = extract('เวลารับแจ้ง');
+  const kpiRaw = extract('KPI');
+  const responseRaw = extract('เวลาตอบรับ');
+
+  const approveTime = parseTime(approveRaw);
+  const arriveTime = parseTime(arriveRaw);
+  const startTime = parseTime(startRaw) || arriveTime; // fallback to arrive if no start
+  const closeTime = parseTime(closeRaw);
+  const notifyTime = parseTime(notifyRaw);
+
+  const stdRaw = extract('มาตรฐานเวลา');
+  let std = 'A';
+  if(stdRaw.includes('1-3') || /3\s*ชม/.test(stdRaw)) std = 'B';
+  else if(/3.*1\s*วัน/.test(stdRaw) || /3ชม.*วัน/.test(stdRaw)) std = 'C';
+  else if(stdRaw.includes('1-7') || /7\s*วัน/.test(stdRaw)) std = 'D';
+  else if(stdRaw.includes('7-14') || /14\s*วัน/.test(stdRaw)) std = 'E';
+  else if(stdRaw.includes('เดือน')) std = 'F';
+
+  // location: ลอง บริเวณ ก่อน ถ้าไม่ได้ใช้ พื้นที่
+  const locationRaw = extract('บริเวณ') || extract('พื้นที่');
+
+  const c = {
+    id: genId(), area, date: dateISO, seq,
+    jobNo: extract('เลขที่ใบงาน'),
+    sapNo: extract('เลขที่ SAP'),
+    notifyTime,
+    kpiVal: kpiRaw.replace(/น\.?$/, '').trim(),
+    responseTime: responseRaw.replace(/น\.?$/, '').trim(),
+    std, approveTime, arriveTime, startTime, closeTime,
+    location: locationRaw,
+    problem: extract('ปัญหาหน้างาน'),
+    solution: extract('การแก้ไข'),
+    reporter: extract('ผู้แจ้ง'),
+    receiver: extract('ผู้รับแจ้ง'),
+    technician: extract('ช่างผู้ทำการซ่อม'),
+    kpi1: calcKPI1(notifyTime, arriveTime, responseRaw, approveTime),
+    kpi2: calcKPI2(startTime, closeTime, std),
+    kpi3: ''
+  };
+  window._pendingCase = c;
+
+  const fields = {
+    'พื้นที่': c.area, 'วันที่': c.date, 'ลำดับ': c.seq,
+    'Job No': c.jobNo, 'SAP No': c.sapNo, 'KPI': c.kpiVal,
+    'ตอบรับ': c.responseTime,
+    'เวลาแจ้ง': c.notifyTime, 'เวลาอนุมัติ': c.approveTime,
+    'ถึงหน้างาน': c.arriveTime, 'เริ่มแก้ไข': c.startTime, 'ปิดงาน': c.closeTime,
+    'มาตรฐาน': c.std, 'บริเวณ': c.location,
+    'ปัญหา': c.problem, 'การแก้ไข': c.solution,
+    'ผู้แจ้ง': c.reporter, 'ผู้รับแจ้ง': c.receiver
+  };
+  document.getElementById('parse-result').innerHTML = `
+    <div class="parsed-preview">
+      <div style="font-weight:600;margin-bottom:8px;color:#1a3a5c;">📋 ตรวจสอบข้อมูล:</div>
+      <div class="parsed-row">${Object.entries(fields).map(([k,v])=>`<div class="parsed-field"><span>${k}:</span> ${v||'—'}</div>`).join('')}</div>
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+        <div>KPI1 (ตอบรับ): <span class="badge ${c.kpi1==='pass'?'badge-pass':c.kpi1==='fail'?'badge-fail':'badge-na'}">${c.kpi1||'N/A'}</span></div>
+        <div>KPI2 (ดำเนินการ): <span class="badge ${c.kpi2==='pass'?'badge-pass':c.kpi2==='fail'?'badge-fail':'badge-na'}">${c.kpi2||'N/A'}</span></div>
+        <button class="btn btn-success btn-sm" onclick="confirmSave()">✅ บันทึกเคสนี้</button>
+      </div>
+    </div>`;
+}
+
+async function confirmSave() {
+  const c = window._pendingCase;
+  if(!c) return;
+  if(c.sapNo && db.find(x => x.sapNo === c.sapNo)) {
+    if(!confirm(`SAP No. ${c.sapNo} มีในฐานข้อมูลแล้ว ต้องการเพิ่มอีกครั้ง?`)) return;
+  }
+  try {
+    const saved = await apiPost('/api/cases', c);
+    db.push(saved);
+    document.getElementById('parse-result').innerHTML = '<div class="alert alert-success">✅ บันทึกเคสเรียบร้อย!</div>';
+    document.getElementById('line-text').value = '';
+    window._pendingCase = null;
+  } catch(e) {
+    document.getElementById('parse-result').innerHTML = `<div class="alert alert-error">❌ ${e.message}</div>`;
+  }
+}
+
+function clearPaste() {
+  document.getElementById('line-text').value = '';
+  document.getElementById('parse-result').innerHTML = '';
+}
+
+// ─── SAVE MANUAL ──────────────────────────────────────
+async function saveCase() {
+  const area = document.getElementById('f-area').value;
+  const date = document.getElementById('f-date').value;
+  const sapNo = document.getElementById('f-sapno').value.trim();
+  if(!area || !date || !sapNo) {
+    document.getElementById('save-msg').innerHTML = '<div class="alert alert-error">กรุณากรอก พื้นที่, วันที่ และ SAP No.</div>'; return;
+  }
+  if(db.find(x => x.sapNo === sapNo)) {
+    if(!confirm(`SAP No. ${sapNo} มีในฐานข้อมูลแล้ว ต้องการเพิ่ม?`)) return;
+  }
+  const approveTime = document.getElementById('f-approve-time').value;
+  const arriveTime = document.getElementById('f-arrive-time').value;
+  const startTime = document.getElementById('f-start-time').value || arriveTime;
+  const closeTime = document.getElementById('f-close-time').value;
+  const std = document.getElementById('f-std').value;
+  const c = {
+    id: genId(), area, date,
+    seq: document.getElementById('f-seq').value,
+    jobNo: document.getElementById('f-jobno').value,
+    sapNo,
+    notifyTime: document.getElementById('f-notify-time').value,
+    kpiVal: document.getElementById('f-kpi-val').value,
+    responseTime: document.getElementById('f-response-time').value,
+    std, approveTime, arriveTime, startTime, closeTime,
+    location: document.getElementById('f-location').value,
+    problem: document.getElementById('f-problem').value,
+    solution: document.getElementById('f-solution').value,
+    reporter: document.getElementById('f-reporter').value,
+    receiver: document.getElementById('f-receiver').value,
+    technician: document.getElementById('f-technician').value,
+    kpi1: calcKPI1(document.getElementById('f-notify-time').value, arriveTime, document.getElementById('f-response-time').value, approveTime),
+    kpi2: calcKPI2(startTime, closeTime, std),
+    kpi3: document.getElementById('f-kpi3').value
+  };
+  try {
+    const saved = await apiPost('/api/cases', c);
+    db.push(saved);
+    document.getElementById('save-msg').innerHTML = '<div class="alert alert-success">✅ บันทึกเรียบร้อย!</div>';
+    setTimeout(()=>document.getElementById('save-msg').innerHTML='', 3000);
+    clearForm();
+  } catch(e) { document.getElementById('save-msg').innerHTML = `<div class="alert alert-error">❌ ${e.message}</div>`; }
+}
+
+function clearForm() {
+  ['f-seq','f-jobno','f-sapno','f-notify-time','f-kpi-val','f-response-time',
+   'f-approve-time','f-arrive-time','f-start-time','f-close-time',
+   'f-location','f-problem','f-solution','f-reporter','f-receiver','f-technician']
+  .forEach(id => { const el = document.getElementById(id); if(el) el.value = ''; });
+  document.getElementById('f-std').value = '';
+  document.getElementById('f-kpi3').value = '';
+}
+
+function badgeKPI(v) {
+  return `<span class="badge ${v==='pass'?'badge-pass':v==='fail'?'badge-fail':'badge-na'}">${v==='pass'?'✓ Pass':v==='fail'?'✗ Fail':'N/A'}</span>`;
+}
+
+// ─── DASHBOARD ────────────────────────────────────────
+function renderDashboard() {
+  const dateVal = document.getElementById('dash-date').value; // YYYY-MM-DD or ''
+  let cases;
+  if(dateVal) {
+    cases = db.filter(c => c.date === dateVal);
+  } else {
+    cases = [...db];
+  }
+
+  // แสดง hint เมื่อ filter วันที่แล้วไม่มีข้อมูล
+  const dbg = document.getElementById('dash-debug');
+  if(dateVal && cases.length === 0 && db.length > 0) {
+    const allDates = [...new Set(db.map(c=>c.date).filter(Boolean))].sort().reverse().slice(0,5);
+    dbg.style.display = 'block';
+    dbg.innerHTML = `⚠️ ไม่มีข้อมูลวันที่ <strong>${fmtDate(dateVal)}</strong> &nbsp;|&nbsp; วันที่มีข้อมูลล่าสุด: ${allDates.map(d=>`<strong>${fmtDate(d)}</strong>`).join(', ')} &nbsp;|&nbsp; <a href="#" onclick="document.getElementById('dash-date').value='';renderDashboard();return false;" style="color:#1a3a5c;">แสดงทั้งหมด</a>`;
+  } else {
+    dbg.style.display = 'none';
+  }
+
+  const total = cases.length, done = cases.filter(c=>c.closeTime).length;
+  const k1p=cases.filter(c=>c.kpi1==='pass').length, k1t=cases.filter(c=>c.kpi1).length;
+  const k2p=cases.filter(c=>c.kpi2==='pass').length, k2t=cases.filter(c=>c.kpi2).length;
+  const k3p=cases.filter(c=>c.kpi3==='pass').length, k3t=cases.filter(c=>c.kpi3).length;
+
+  document.getElementById('dash-stats').innerHTML = `
+    <div class="stat"><div class="stat-num">${total}</div><div class="stat-label">ปริมาณงานทั้งหมด</div></div>
+    <div class="stat green"><div class="stat-num">${done}</div><div class="stat-label">แก้ไขเสร็จแล้ว</div></div>
+    <div class="stat orange"><div class="stat-num">${total-done}</div><div class="stat-label">ยังไม่แล้วเสร็จ</div></div>
+    <div class="stat"><div class="stat-num">${pct(k1p,k1t)}%</div><div class="stat-label">KPI1 ผ่าน (${k1p}/${k1t})</div></div>
+    <div class="stat"><div class="stat-num">${pct(k2p,k2t)}%</div><div class="stat-label">KPI2 ผ่าน (${k2p}/${k2t})</div></div>
+    <div class="stat"><div class="stat-num">${pct(k3p,k3t)}%</div><div class="stat-label">KPI3 ผ่าน (${k3p}/${k3t})</div></div>`;
+
+  document.getElementById('dash-kpi').innerHTML = [['KPI1','ระยะเวลาตอบรับ'],['KPI2','ระยะเวลาดำเนินการ'],['KPI3','ดุลพินิจ']].map(([k,label])=>{
+    const kkey = k.toLowerCase();
+    const pass=cases.filter(c=>c[kkey]==='pass').length;
+    const fail=cases.filter(c=>c[kkey]==='fail').length;
+    const tot=pass+fail, pp=tot?Math.round(pass/tot*100):0;
+    return `<div class="kpi-card"><h4>${k} — ${label}</h4>
+      <div class="kpi-bar-wrap">
+        <div class="kpi-bar-label"><span style="color:#1e7e4a;">ผ่าน ${pass} งาน</span><span>${pp}%</span></div>
+        <div class="kpi-bar-bg"><div class="kpi-bar-fill pass" style="width:${pp}%"></div></div>
+      </div>
+      <div class="kpi-bar-wrap">
+        <div class="kpi-bar-label"><span style="color:#c0392b;">ไม่ผ่าน ${fail} งาน</span><span>${tot?100-pp:0}%</span></div>
+        <div class="kpi-bar-bg"><div class="kpi-bar-fill fail" style="width:${tot?100-pp:0}%"></div></div>
+      </div></div>`;
+  }).join('');
+
+  const areaNames = {MTB:'MTB - อาคารผู้โดยสาร', Z2:'Z2 - อาคารทั่วไป', FZ:'FZ - Free Zone', SAT1:'SAT1 - อาคารเทียบ'};
+  document.getElementById('area-cards').innerHTML = ['MTB','Z2','FZ','SAT1'].map(a => {
+    const ac=cases.filter(c=>c.area===a), ad=ac.filter(c=>c.closeTime).length;
+    const ak1p=ac.filter(c=>c.kpi1==='pass').length, ak1t=ac.filter(c=>c.kpi1).length;
+    const ak2p=ac.filter(c=>c.kpi2==='pass').length, ak2t=ac.filter(c=>c.kpi2).length;
+    const ak3p=ac.filter(c=>c.kpi3==='pass').length, ak3t=ac.filter(c=>c.kpi3).length;
+    return `<div class="card">
+      <div class="section-title">${areaNames[a]} <span style="font-size:12px;color:#888;">${ac.length} เคส</span></div>
+      <div style="display:flex;gap:10px;margin-bottom:8px;">
+        <div class="stat" style="flex:1;padding:8px;"><div class="stat-num" style="font-size:20px;">${ac.length}</div><div class="stat-label">ทั้งหมด</div></div>
+        <div class="stat green" style="flex:1;padding:8px;"><div class="stat-num" style="font-size:20px;">${ad}</div><div class="stat-label">เสร็จ</div></div>
+        <div class="stat orange" style="flex:1;padding:8px;"><div class="stat-num" style="font-size:20px;">${ac.length-ad}</div><div class="stat-label">ค้าง</div></div>
+      </div>
+      <div style="font-size:12px;display:flex;gap:12px;flex-wrap:wrap;color:#555;">
+        <span>KPI1: <strong>${pct(ak1p,ak1t)}%</strong></span>
+        <span>KPI2: <strong>${pct(ak2p,ak2t)}%</strong></span>
+        <span>KPI3: <strong>${pct(ak3p,ak3t)}%</strong></span>
+      </div></div>`;
+  }).join('');
+}
+
+// ─── CASES TABLE ──────────────────────────────────────
+function renderCases() {
+  const area = document.getElementById('filter-area').value;
+  const from = document.getElementById('filter-from').value; // YYYY-MM-DD
+  const to = document.getElementById('filter-to').value;     // YYYY-MM-DD
+  let cases = [...db];
+  if(area !== 'ALL') cases = cases.filter(c => c.area === area);
+  if(from) cases = cases.filter(c => c.date && c.date >= from);
+  if(to) cases = cases.filter(c => c.date && c.date <= to);
+  cases.sort((a,b)=>(b.date+b.notifyTime).localeCompare(a.date+a.notifyTime));
+  document.getElementById('case-count').textContent = `พบ ${cases.length} เคส (จากทั้งหมด ${db.length})`;
+  const tbody = document.getElementById('cases-tbody');
+  if(!cases.length) { tbody.innerHTML='<tr><td colspan="13" class="no-data">ไม่มีข้อมูล</td></tr>'; return; }
+  tbody.innerHTML = cases.map(c=>`<tr>
+    <td><span class="badge badge-${(c.area||'').toLowerCase()}">${c.area||''}</span></td>
+    <td>${fmtDate(c.date)}</td>
+    <td>${c.seq||''}</td>
+    <td>${c.jobNo||''}</td>
+    <td style="font-weight:500;">${c.sapNo||''}</td>
+    <td>${c.notifyTime||''}</td>
+    <td style="max-width:110px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${c.location||''}">${c.location||''}</td>
+    <td style="max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${c.problem||''}">${c.problem||''}</td>
+    <td>${badgeKPI(c.kpi1)}</td>
+    <td>${badgeKPI(c.kpi2)}</td>
+    <td>${badgeKPI(c.kpi3)}</td>
+    <td>${c.closeTime?`<span class="badge badge-pass">${c.closeTime}</span>`:'<span class="badge badge-pending">ค้าง</span>'}</td>
+    <td style="white-space:nowrap;">
+      <button class="btn btn-outline btn-sm" onclick="openEdit('${c.id}')">✏️</button>
+      <button class="btn btn-danger btn-sm" onclick="deleteCase('${c.id}')">🗑</button>
+    </td></tr>`).join('');
+}
+
+function clearFilters() {
+  document.getElementById('filter-area').value = 'ALL';
+  document.getElementById('filter-from').value = '';
+  document.getElementById('filter-to').value = '';
+  renderCases();
+}
+async function deleteCase(id) {
+  if(!confirm('ต้องการลบเคสนี้?')) return;
+  try {
+    await apiDelete(`/api/cases/${id}`);
+    db = db.filter(c => c.id !== id); renderCases();
+  } catch(e) { alert('ลบไม่สำเร็จ: ' + e.message); }
+}
+
+// ─── EDIT MODAL ───────────────────────────────────────
+function openEdit(id) {
+  editingId = id;
+  const c = db.find(x => x.id === id);
+  if(!c) return;
+
+  const fields = [
+    ['area','พื้นที่','select',['MTB','Z2','FZ','SAT1']],
+    ['date','วันที่','date',null],
+    ['seq','ลำดับ','text',null],
+    ['jobNo','Job No.','text',null],
+    ['sapNo','SAP No.','text',null],
+    ['notifyTime','เวลารับแจ้ง','time',null],
+    ['kpiVal','KPI (ค่า)','text',null],
+    ['responseTime','เวลาตอบรับ','text',null],
+    ['std','มาตรฐานเวลา','select',['','A','B','C','D','E','F']],
+    ['approveTime','เวลาอนุมัติการซ่อม','time',null],
+    ['arriveTime','เวลาที่ถึงหน้างาน','time',null],
+    ['startTime','เวลาเริ่มการแก้ไข','time',null],
+    ['closeTime','เวลาปิดงาน','time',null],
+    ['kpi3','KPI3 ดุลพินิจ','select',['','pass','fail']],
+    ['location','บริเวณ / สถานที่','text',null],
+    ['problem','ปัญหาหน้างาน','text',null],
+    ['solution','การแก้ไข','text',null],
+    ['technician','ช่างผู้ซ่อม','text',null],
+    ['reporter','ผู้แจ้ง','text',null],
+    ['receiver','ผู้รับแจ้ง','text',null],
+  ];
+  document.getElementById('edit-form-fields').innerHTML = fields.map(([key,label,type,opts])=>{
+    const val = c[key] || '';
+    if(type === 'select') {
+      return `<div class="form-group"><label>${label}</label><select id="edit-${key}">${(opts||[]).map(o=>`<option value="${o}"${o===val?' selected':''}>${o||'-- ยังไม่กำหนด --'}</option>`).join('')}</select></div>`;
+    }
+    return `<div class="form-group"><label>${label}</label><input type="${type}" id="edit-${key}" value="${val}"></div>`;
+  }).join('');
+  document.getElementById('edit-modal').classList.add('open');
+}
+
+async function saveEdit() {
+  const c = db.find(x => x.id === editingId);
+  if(!c) return;
+  const keys = ['area','date','seq','jobNo','sapNo','notifyTime','kpiVal','responseTime','std',
+                'approveTime','arriveTime','startTime','closeTime','kpi3',
+                'location','problem','solution','technician','reporter','receiver'];
+  keys.forEach(f => { const el = document.getElementById('edit-'+f); if(el) c[f] = el.value; });
+  // ถ้าไม่มี startTime ให้ใช้ arriveTime
+  if(!c.startTime) c.startTime = c.arriveTime;
+  c.kpi1 = calcKPI1(c.notifyTime, c.arriveTime, c.responseTime, c.approveTime);
+  c.kpi2 = calcKPI2(c.startTime, c.closeTime, c.std);
+  try {
+    const updated = await apiPut(`/api/cases/${editingId}`, c);
+    const idx = db.findIndex(x=>x.id===editingId);
+    if(idx>=0) db[idx]=updated;
+    closeModal(); renderCases();
+  } catch(e) { alert('บันทึกไม่สำเร็จ: '+e.message); }
+}
+
+function closeModal() { document.getElementById('edit-modal').classList.remove('open'); }
+
+// ─── SUMMARY ──────────────────────────────────────────
+function renderSummary() {
+  const month = document.getElementById('summary-month').value;
+  const area = document.getElementById('summary-area').value;
+  if(!month) { document.getElementById('summary-content').innerHTML='<div class="no-data">เลือกเดือน</div>'; return; }
+  let cases = db.filter(c => c.date && c.date.startsWith(month));
+  if(area !== 'ALL') cases = cases.filter(c => c.area === area);
+  const [yr,mo] = month.split('-');
+  const total=cases.length, done=cases.filter(c=>c.closeTime).length;
+  const k1p=cases.filter(c=>c.kpi1==='pass').length, k1t=cases.filter(c=>c.kpi1).length;
+  const k2p=cases.filter(c=>c.kpi2==='pass').length, k2t=cases.filter(c=>c.kpi2).length;
+  const k3p=cases.filter(c=>c.kpi3==='pass').length, k3t=cases.filter(c=>c.kpi3).length;
+  let html=`<div class="card"><div class="section-title">สรุปเดือน ${mo}/${parseInt(yr)+543} — ${area==='ALL'?'ทุกพื้นที่':area}</div>
+  <div class="stats-grid" style="margin-bottom:14px;">
+    <div class="stat"><div class="stat-num">${total}</div><div class="stat-label">งานทั้งหมด</div></div>
+    <div class="stat green"><div class="stat-num">${done}</div><div class="stat-label">เสร็จแล้ว</div></div>
+    <div class="stat orange"><div class="stat-num">${total-done}</div><div class="stat-label">ยังไม่เสร็จ</div></div>
+    <div class="stat"><div class="stat-num">${pct(k1p,k1t)}%</div><div class="stat-label">KPI1 ผ่าน (${k1p}/${k1t})</div></div>
+    <div class="stat"><div class="stat-num">${pct(k2p,k2t)}%</div><div class="stat-label">KPI2 ผ่าน (${k2p}/${k2t})</div></div>
+    <div class="stat"><div class="stat-num">${pct(k3p,k3t)}%</div><div class="stat-label">KPI3 ผ่าน (${k3p}/${k3t})</div></div>
+  </div>`;
+  if(area==='ALL'){
+    html+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px;">';
+    ['MTB','Z2','FZ','SAT1'].forEach(a=>{
+      const ac=cases.filter(c=>c.area===a), ad=ac.filter(c=>c.closeTime).length;
+      const ak1p=ac.filter(c=>c.kpi1==='pass').length, ak1t=ac.filter(c=>c.kpi1).length;
+      const ak2p=ac.filter(c=>c.kpi2==='pass').length, ak2t=ac.filter(c=>c.kpi2).length;
+      const ak3p=ac.filter(c=>c.kpi3==='pass').length, ak3t=ac.filter(c=>c.kpi3).length;
+      html+=`<div class="card" style="margin:0;">
+        <div class="section-title" style="font-size:12px;">${a}</div>
+        <div style="display:flex;gap:8px;margin-bottom:6px;flex-wrap:wrap;">
+          <span>ทั้งหมด <strong>${ac.length}</strong></span>
+          <span style="color:#1e7e4a;">เสร็จ <strong>${ad}</strong></span>
+          <span style="color:#d97706;">ค้าง <strong>${ac.length-ad}</strong></span>
+        </div>
+        <div style="font-size:11px;display:flex;gap:8px;flex-wrap:wrap;color:#555;">
+          <span>KPI1: <strong>${pct(ak1p,ak1t)}%</strong></span>
+          <span>KPI2: <strong>${pct(ak2p,ak2t)}%</strong></span>
+          <span>KPI3: <strong>${pct(ak3p,ak3t)}%</strong></span>
+        </div></div>`;
+    });
+    html+='</div>';
+  }
+  const days=[...new Set(cases.map(c=>c.date))].sort();
+  if(days.length){
+    html+=`<div class="section-title">รายวัน</div><div class="tbl-wrap"><table>
+    <thead><tr><th>วันที่</th><th>ทั้งหมด</th><th>เสร็จ</th><th>ค้าง</th><th>KPI1 ผ่าน</th><th>KPI2 ผ่าน</th><th>KPI3 ผ่าน</th></tr></thead>
+    <tbody>${days.map(d=>{
+      const dc=cases.filter(c=>c.date===d), dd=dc.filter(c=>c.closeTime).length;
+      const dk1p=dc.filter(c=>c.kpi1==='pass').length, dk1t=dc.filter(c=>c.kpi1).length;
+      const dk2p=dc.filter(c=>c.kpi2==='pass').length, dk2t=dc.filter(c=>c.kpi2).length;
+      const dk3p=dc.filter(c=>c.kpi3==='pass').length, dk3t=dc.filter(c=>c.kpi3).length;
+      return `<tr><td>${fmtDate(d)}</td><td>${dc.length}</td>
+        <td style="color:#1e7e4a;">${dd}</td>
+        <td style="color:#d97706;">${dc.length-dd}</td>
+        <td>${dk1p}/${dk1t} (${pct(dk1p,dk1t)}%)</td>
+        <td>${dk2p}/${dk2t} (${pct(dk2p,dk2t)}%)</td>
+        <td>${dk3p}/${dk3t} (${pct(dk3p,dk3t)}%)</td></tr>`;
+    }).join('')}</tbody></table></div>`;
+  }
+  html+='</div>';
+  document.getElementById('summary-content').innerHTML=html;
+}
+
+// ─── PENDING ──────────────────────────────────────────
+function renderPending() {
+  const month = document.getElementById('pending-month').value;
+  const area = document.getElementById('pending-area').value;
+  let cases = db.filter(c => !c.closeTime);
+  if(month) cases = cases.filter(c => c.date && c.date.startsWith(month));
+  if(area !== 'ALL') cases = cases.filter(c => c.area === area);
+  cases.sort((a,b)=>(a.date+a.notifyTime).localeCompare(b.date+b.notifyTime));
+  let html=`<div class="card"><div class="section-title">เคสยังไม่แล้วเสร็จ <span class="badge badge-pending">${cases.length} เคส</span></div>`;
+  if(!cases.length) { html+='<div class="no-data">✅ ไม่มีเคสค้างดำเนินการ</div></div>'; }
+  else {
+    html+=`<div class="tbl-wrap"><table>
+    <thead><tr><th>พื้นที่</th><th>วันที่</th><th>ลำดับ</th><th>SAP No.</th><th>Job No.</th><th>เวลาแจ้ง</th><th>บริเวณ</th><th>ปัญหา</th><th>KPI1</th><th>KPI2</th><th>อายุ (วัน)</th></tr></thead>
+    <tbody>${cases.map(c=>{
+      const age=c.date?Math.floor((Date.now()-new Date(c.date).getTime())/86400000):0;
+      return `<tr>
+        <td><span class="badge badge-${(c.area||'').toLowerCase()}">${c.area||''}</span></td>
+        <td>${fmtDate(c.date)}</td><td>${c.seq||''}</td>
+        <td style="font-weight:500;">${c.sapNo||''}</td><td>${c.jobNo||''}</td>
+        <td>${c.notifyTime||''}</td>
+        <td style="max-width:110px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${c.location||''}">${c.location||''}</td>
+        <td style="max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${c.problem||''}">${c.problem||''}</td>
+        <td>${badgeKPI(c.kpi1)}</td><td>${badgeKPI(c.kpi2)}</td>
+        <td style="color:${age>7?'#c0392b':age>3?'#d97706':'#1e7e4a'};font-weight:600;">${age}</td>
+      </tr>`;
+    }).join('')}</tbody></table></div></div>`;
+  }
+  document.getElementById('pending-content').innerHTML=html;
+}
+
+// ─── EXPORT ───────────────────────────────────────────
+function exportDailyCSV() {
+  const dateVal = document.getElementById('dash-date').value;
+  const cases = dateVal ? db.filter(c => c.date === dateVal) : [...db];
+  if(!cases.length){ alert('ไม่มีข้อมูลที่จะ Export'); return; }
+  let csv = `CM Daily Report — ${dateVal ? fmtDate(dateVal) : 'ทั้งหมด'}\n\n`;
+  csv += 'พื้นที่,วันที่,ลำดับ,Job No.,SAP No.,KPI,ตอบรับ,เวลาแจ้ง,บริเวณ,ปัญหา,มาตรฐาน,อนุมัติ,ถึงหน้างาน,เริ่มแก้ไข,ปิดงาน,KPI1,KPI2,KPI3,การแก้ไข,ช่าง\n';
+  cases.sort((a,b)=>(a.area+a.date+a.notifyTime).localeCompare(b.area+b.date+b.notifyTime));
+  cases.forEach(c => {
+    const row = [c.area, fmtDate(c.date), c.seq||'', c.jobNo||'', c.sapNo||'',
+      c.kpiVal||'', c.responseTime||'', c.notifyTime||'', c.location||'', c.problem||'',
+      c.std||'', c.approveTime||'', c.arriveTime||'', c.startTime||'', c.closeTime||'',
+      c.kpi1||'', c.kpi2||'', c.kpi3||'', c.solution||'', c.technician||''];
+    csv += row.map(v => `"${String(v).replace(/"/g,'""')}"`).join(',') + '\n';
+  });
+  downloadCSV(csv, `CM_Daily_${dateVal||'all'}.csv`);
+}
+
+function exportMonthlyCSV() {
+  const month = document.getElementById('summary-month').value;
+  const area = document.getElementById('summary-area').value;
+  if(!month){ alert('เลือกเดือนก่อน'); return; }
+  let cases = db.filter(c => c.date && c.date.startsWith(month));
+  if(area !== 'ALL') cases = cases.filter(c => c.area === area);
+  if(!cases.length){ alert('ไม่มีข้อมูล'); return; }
+  const [yr,mo] = month.split('-');
+  let csv = `CM Monthly Report — ${mo}/${parseInt(yr)+543} — ${area==='ALL'?'ทุกพื้นที่':area}\n\n`;
+  csv += 'พื้นที่,วันที่,ลำดับ,Job No.,SAP No.,KPI,ตอบรับ,เวลาแจ้ง,บริเวณ,ปัญหา,มาตรฐาน,อนุมัติ,ถึงหน้างาน,เริ่มแก้ไข,ปิดงาน,KPI1,KPI2,KPI3,การแก้ไข,ช่าง\n';
+  cases.sort((a,b)=>(a.date+a.notifyTime).localeCompare(b.date+b.notifyTime));
+  cases.forEach(c => {
+    const row = [c.area, fmtDate(c.date), c.seq||'', c.jobNo||'', c.sapNo||'',
+      c.kpiVal||'', c.responseTime||'', c.notifyTime||'', c.location||'', c.problem||'',
+      c.std||'', c.approveTime||'', c.arriveTime||'', c.startTime||'', c.closeTime||'',
+      c.kpi1||'', c.kpi2||'', c.kpi3||'', c.solution||'', c.technician||''];
+    csv += row.map(v => `"${String(v).replace(/"/g,'""')}"`).join(',') + '\n';
+  });
+  downloadCSV(csv, `CM_Monthly_${month}_${area}.csv`);
+}
+
+function downloadCSV(csv, filename) {
+  const blob = new Blob(['\ufeff' + csv], {type:'text/csv;charset=utf-8;'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename; a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+// ─── INIT ─────────────────────────────────────────────
+
+// ─── SERVER EXPORT (inject ข้อมูลเข้า Template จริง) ──
+// API calls go to same origin /api
+
+async function exportDailyExcel(ev) {
+  const btn = ev ? ev.currentTarget : null;
+  const orig = btn ? btn.textContent : '';
+  if(btn) { btn.textContent = '⏳ กำลังตรวจสอบ...'; btn.disabled = true; }
+  const dateVal = document.getElementById('dash-date').value;
+  const cases = dateVal ? db.filter(c => c.date === dateVal) : [...db];
+  if(!cases.length) { 
+    alert('ไม่มีข้อมูล'); 
+    if(btn) { btn.textContent = orig; btn.disabled = false; }
+    return; 
+  }
+  if(btn) { btn.textContent = '⏳ Export...'; }
+  try {
+    const resp = await fetch('/api/export/daily', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({cases, date: dateVal})
+    });
+    if(!resp.ok) throw new Error(await resp.text());
+    const blob = await resp.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = `CM_Daily_${dateVal||'all'}.xlsx`; a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  } catch(e) { 
+    console.error('Daily export error:', e);
+    alert('Export ไม่สำเร็จ: ' + e.message); 
+  }
+  finally { if(btn) { btn.textContent = orig; btn.disabled = false; } }
+}
+
+async function exportMonthlyExcel(ev) {
+  const btn = ev ? ev.currentTarget : null;
+  const orig = btn ? btn.textContent : '';
+  if(btn) { btn.textContent = '⏳ กำลังตรวจสอบ...'; btn.disabled = true; }
+  const month = document.getElementById('summary-month').value;
+  const area  = document.getElementById('summary-area').value;
+  if(!month) { 
+    alert('เลือกเดือนก่อน'); 
+    if(btn) { btn.textContent = orig; btn.disabled = false; }
+    return; 
+  }
+  let cases = db.filter(c => c.date && c.date.startsWith(month));
+  if(area !== 'ALL') cases = cases.filter(c => c.area === area);
+  if(!cases.length) { 
+    alert('ไม่มีข้อมูล'); 
+    if(btn) { btn.textContent = orig; btn.disabled = false; }
+    return; 
+  }
+  if(btn) { btn.textContent = '⏳ Export...'; }
+  try {
+    const resp = await fetch('/api/export/monthly', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({cases, month})
+    });
+    if(!resp.ok) throw new Error(await resp.text());
+    const blob = await resp.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = `CM_Monthly_${month}.xlsx`; a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  } catch(e) { 
+    console.error('Monthly export error:', e);
+    alert('Export ไม่สำเร็จ: ' + e.message); 
+  }
+  finally { if(btn) { btn.textContent = orig; btn.disabled = false; } }
+}
+
+
+window.onload = async () => {
+  const today = new Date().toISOString().slice(0, 10);
+  const thisMonth = today.slice(0, 7);
+  document.getElementById('dash-date').value = today;
+  document.getElementById('f-date').value = today;
+  document.getElementById('summary-month').value = thisMonth;
+  document.getElementById('pending-month').value = thisMonth;
+  showLoading('กำลังโหลดข้อมูล...');
+  await loadAllCases();
+  hideLoading();
+  renderDashboard();
+};
+</script>
+</body>
+</html>
