@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: cm-daily-report
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app --workers 2 --bind 0.0.0.0:$PORT
+    envVars:
+      - key: SECRET_KEY
+        generateValue: true
+      - key: DATABASE_URL
+        fromDatabase:
+          name: cm-db
+          property: connectionString
+
+databases:
+  - name: cm-db
+    databaseName: cm_report
+    plan: free
