@@ -271,26 +271,37 @@ async function loadAllCases() {
   } catch(e) { console.error('loadAllCases:', e); }
 }
 
+async function safeJsonParse(r) {
+  const text = await r.text();
+  try {
+    return JSON.parse(text);
+  } catch(e) {
+    // response ไม่ใช่ JSON (เช่น Flask ส่ง HTML error page กลับมา)
+    console.error('Non-JSON response:', text.slice(0, 300));
+    throw new Error(`Server ตอบกลับผิดรูปแบบ (HTTP ${r.status}) — ดู Console สำหรับรายละเอียด`);
+  }
+}
+
 async function apiPost(path, data) {
   const r = await fetch(API + path, {
     method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(data)
   });
-  if(!r.ok) { const e=await r.json(); throw new Error(e.error||r.statusText); }
-  return r.json();
+  if(!r.ok) { const e = await safeJsonParse(r); throw new Error(e.error || r.statusText); }
+  return safeJsonParse(r);
 }
 
 async function apiPut(path, data) {
   const r = await fetch(API + path, {
     method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify(data)
   });
-  if(!r.ok) { const e=await r.json(); throw new Error(e.error||r.statusText); }
-  return r.json();
+  if(!r.ok) { const e = await safeJsonParse(r); throw new Error(e.error || r.statusText); }
+  return safeJsonParse(r);
 }
 
 async function apiDelete(path) {
   const r = await fetch(API + path, {method:'DELETE'});
-  if(!r.ok) throw new Error(r.statusText);
-  return r.json();
+  if(!r.ok) { const e = await safeJsonParse(r); throw new Error(e.error || r.statusText); }
+  return safeJsonParse(r);
 }
 
 function showLoading(msg='กำลังโหลด...') {
