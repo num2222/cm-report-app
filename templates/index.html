@@ -431,8 +431,9 @@ function parseLine() {
   if(!txt) { alert('กรุณาวางข้อความก่อน'); return; }
 
   function extract(key) {
-    // match "key : value" or "key:value"
-    const re = new RegExp(key + '\\s*:\\s*(.+)', 'i');
+    // match "key : value" — ใช้ [ \t]* แทน \s* เพื่อไม่ให้กลืนขึ้นบรรทัดใหม่
+    // (\s* จะ match \n ด้วย ทำให้เมื่อ field ว่าง regex จะไหลไปจับบรรทัดถัดไปแทน)
+    const re = new RegExp(key + '[ \\t]*[:：][ \\t]*([^\\r\\n]*)', 'i');
     const m = txt.match(re);
     if(m) return m[1].trim();
     return '';
@@ -487,6 +488,21 @@ function parseLine() {
   };
   window._pendingCase = c;
 
+  // ── ตรวจสอบความผิดปกติของข้อมูลที่ parse ได้ ──────────
+  const warnings = [];
+  if(c.sapNo && (c.sapNo.length > 20 || /[ก-๙]/.test(c.sapNo))) {
+    warnings.push(`เลขที่ SAP ดูผิดปกติ: "${c.sapNo}" (ควรเป็นตัวเลขสั้นๆ)`);
+  }
+  if(c.jobNo && /[ก-๙]/.test(c.jobNo)) {
+    warnings.push(`เลขที่ใบงาน ดูผิดปกติ: "${c.jobNo}"`);
+  }
+  if(c.kpiVal && !/^[\d.]+$/.test(c.kpiVal) && c.kpiVal.length > 0) {
+    warnings.push(`ค่า KPI ดูผิดปกติ: "${c.kpiVal}" (ควรเป็นตัวเลข)`);
+  }
+  if(!c.date) {
+    warnings.push('ไม่พบวันที่ — กรุณาตรวจสอบบรรทัด "วันที่ :"');
+  }
+
   const fields = {
     'พื้นที่': c.area, 'วันที่': c.date, 'ลำดับ': c.seq,
     'Job No': c.jobNo, 'SAP No': c.sapNo, 'KPI': c.kpiVal,
@@ -497,8 +513,12 @@ function parseLine() {
     'ปัญหา': c.problem, 'การแก้ไข': c.solution,
     'ผู้แจ้ง': c.reporter, 'ผู้รับแจ้ง': c.receiver
   };
+  const warningHtml = warnings.length
+    ? `<div class="alert alert-error">⚠️ พบข้อมูลที่อาจ parse ผิด กรุณาตรวจสอบก่อนบันทึก:<br>${warnings.map(w=>'• '+w).join('<br>')}<br><br>แนะนำให้สลับไปแท็บ "กรอกเอง" แล้วแก้ไขค่าที่ผิดด้วยมือ</div>`
+    : '';
   document.getElementById('parse-result').innerHTML = `
     <div class="parsed-preview">
+      ${warningHtml}
       <div style="font-weight:600;margin-bottom:8px;color:#1a3a5c;">📋 ตรวจสอบข้อมูล:</div>
       <div class="parsed-row">${Object.entries(fields).map(([k,v])=>`<div class="parsed-field"><span>${k}:</span> ${v||'—'}</div>`).join('')}</div>
       <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
