@@ -457,7 +457,7 @@ function parseLine() {
   const locationRaw = extract('บริเวณ') || extract('พื้นที่');
 
   const c = {
-    id: genId(), area, date: dateISO, seq,
+    area, date: dateISO, seq,
     jobNo: extract('เลขที่ใบงาน'),
     sapNo: extract('เลขที่ SAP'),
     notifyTime,
@@ -537,7 +537,7 @@ async function saveCase() {
   const closeTime = document.getElementById('f-close-time').value;
   const std = document.getElementById('f-std').value;
   const c = {
-    id: genId(), area, date,
+    area, date,
     seq: document.getElementById('f-seq').value,
     jobNo: document.getElementById('f-jobno').value,
     sapNo,
