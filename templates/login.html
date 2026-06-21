@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>เข้าสู่ระบบ — CM Daily Report</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: 'Sarabun', 'Segoe UI', sans-serif;
+  background: linear-gradient(135deg, #1a3a5c 0%, #15304d 100%);
+  min-height: 100vh;
+  display: flex; align-items: center; justify-content: center;
+  padding: 20px;
+}
+.login-card {
+  background: #fff;
+  border-radius: 12px;
+  padding: 40px 36px;
+  width: 100%; max-width: 380px;
+  box-shadow: 0 12px 40px rgba(0,0,0,.25);
+}
+.logo { text-align: center; margin-bottom: 8px; font-size: 32px; }
+.title { text-align: center; font-size: 18px; font-weight: 600; color: #1a3a5c; margin-bottom: 4px; }
+.subtitle { text-align: center; font-size: 13px; color: #888; margin-bottom: 28px; }
+.form-group { margin-bottom: 16px; }
+.form-group label { display: block; font-size: 13px; color: #555; margin-bottom: 6px; font-weight: 500; }
+.form-group input {
+  width: 100%; padding: 12px 14px;
+  border: 1px solid #ccd4de; border-radius: 8px;
+  font-size: 15px; font-family: inherit;
+  transition: border-color .15s;
+}
+.form-group input:focus {
+  outline: none; border-color: #5bb8ff; box-shadow: 0 0 0 3px #dbeeff;
+}
+.btn-login {
+  width: 100%; padding: 12px;
+  background: #1a3a5c; color: #fff;
+  border: none; border-radius: 8px;
+  font-size: 15px; font-weight: 600; font-family: inherit;
+  cursor: pointer; transition: background .15s;
+  margin-top: 8px;
+}
+.btn-login:hover { background: #15304d; }
+.btn-login:disabled { background: #99a8b8; cursor: not-allowed; }
+.error-msg {
+  background: #f8d7da; color: #721c24;
+  border: 1px solid #f5c6cb; border-radius: 6px;
+  padding: 10px 14px; font-size: 13px;
+  margin-bottom: 16px; display: none;
+}
+.footer-note { text-align: center; font-size: 11px; color: #aaa; margin-top: 24px; }
+</style>
+</head>
+<body>
+
+<div class="login-card">
+  <div class="logo">⚡</div>
+  <div class="title">CM Daily Report</div>
+  <div class="subtitle">ระบบงานซ่อมแซมแก้ไข — LV System</div>
+
+  <div class="error-msg" id="error-msg"></div>
+
+  <form id="login-form">
+    <div class="form-group">
+      <label>รหัสผ่าน</label>
+      <input type="password" id="password" placeholder="กรอกรหัสผ่าน" autofocus required>
+    </div>
+    <button type="submit" class="btn-login" id="btn-login">เข้าสู่ระบบ</button>
+  </form>
+
+  <div class="footer-note">ท่าอากาศยานสุวรรณภูมิ — แผนกระบบไฟฟ้า LV</div>
+</div>
+
+<script>
+const form = document.getElementById('login-form');
+const btn = document.getElementById('btn-login');
+const errorBox = document.getElementById('error-msg');
+
+form.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const password = document.getElementById('password').value;
+  errorBox.style.display = 'none';
+  btn.disabled = true;
+  btn.textContent = 'กำลังตรวจสอบ...';
+
+  try {
+    const r = await fetch('/api/login', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ password })
+    });
+    if (r.ok) {
+      window.location.href = '/';
+    } else {
+      const data = await r.json().catch(() => ({}));
+      errorBox.textContent = data.error || 'รหัสผ่านไม่ถูกต้อง';
+      errorBox.style.display = 'block';
+      document.getElementById('password').value = '';
+      document.getElementById('password').focus();
+    }
+  } catch (err) {
+    errorBox.textContent = 'เชื่อมต่อ server ไม่สำเร็จ กรุณาลองใหม่';
+    errorBox.style.display = 'block';
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'เข้าสู่ระบบ';
+  }
+});
+</script>
+</body>
+</html>
