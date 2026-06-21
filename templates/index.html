@@ -100,6 +100,7 @@ textarea.paste-box { width: 100%; height: 200px; font-family: 'Courier New', mon
   <button class="nav-btn" onclick="showPage('cases',this)">รายการเคส</button>
   <button class="nav-btn" onclick="showPage('summary',this)">สรุปรายเดือน</button>
   <button class="nav-btn" onclick="showPage('pending',this)">ค้างดำเนินการ</button>
+  <button class="nav-btn" onclick="showPage('sapclose',this)">ปิด SAP</button>
 </nav>
 <div id="loading-bar" style="display:none;background:#1a3a5c;color:#fff;text-align:center;padding:6px;font-size:12px;">
   <span id="loading-msg">กำลังโหลด...</span>
@@ -243,6 +244,75 @@ textarea.paste-box { width: 100%; height: 200px; font-family: 'Courier New', mon
   <div id="pending-content"></div>
 </div>
 
+<!-- SAP CLOSE -->
+<div id="page-sapclose" class="page">
+  <div class="date-filter">
+    <label>พื้นที่</label>
+    <select id="sap-area" onchange="renderSapClose()">
+      <option value="ALL">ทุกพื้นที่</option><option value="MTB">MTB</option><option value="Z2">Z2</option><option value="FZ">FZ</option><option value="SAT1">SAT1</option>
+    </select>
+    <label>จากวันที่</label><input type="date" id="sap-from" onchange="renderSapClose()">
+    <label>ถึงวันที่</label><input type="date" id="sap-to" onchange="renderSapClose()">
+    <label>สถานะ</label>
+    <select id="sap-status-filter" onchange="renderSapClose()">
+      <option value="ALL">ทุกสถานะ</option>
+      <option value="pending">รอปิด SAP</option>
+      <option value="closed">ปิด SAP</option>
+      <option value="failed">ปิด SAP ไม่สำเร็จ</option>
+    </select>
+    <button class="btn btn-outline btn-sm" onclick="clearSapFilters()">ล้าง</button>
+    <span id="sap-count" style="font-size:12px;color:#888;"></span>
+  </div>
+  <div id="sapclose-content"></div>
+</div>
+
+<!-- SAP STATUS MODAL -->
+<div class="modal-overlay" id="sap-modal">
+  <div class="modal" style="width:480px;">
+    <div class="modal-header">
+      <h3>อัปเดตสถานะ SAP</h3>
+      <button class="modal-close" onclick="closeSapModal()">✕</button>
+    </div>
+    <div id="sap-modal-info" style="background:#f7f9fc;border:1px solid #dde3ea;border-radius:6px;padding:10px 14px;margin-bottom:14px;font-size:12px;"></div>
+    <div class="form-grid">
+      <div class="form-group full">
+        <label>สถานะ</label>
+        <select id="sap-modal-status" onchange="toggleSapReasonField()">
+          <option value="pending">รอปิด SAP</option>
+          <option value="closed">ปิด SAP</option>
+          <option value="failed">ปิด SAP ไม่สำเร็จ</option>
+        </select>
+      </div>
+      <div class="form-group full" id="sap-modal-reason-wrap" style="display:none;">
+        <label>เหตุผลที่ปิด SAP ไม่สำเร็จ</label>
+        <input type="text" id="sap-modal-reason" placeholder="เช่น ระบบ SAP ขัดข้อง / รอเอกสารยืนยัน">
+      </div>
+    </div>
+    <div style="margin-top:14px;display:flex;gap:8px;">
+      <button class="btn btn-success" onclick="saveSapStatus()">💾 บันทึก</button>
+      <button class="btn btn-outline" onclick="closeSapModal()">ยกเลิก</button>
+    </div>
+  </div>
+</div>
+
+<!-- ADD SAP NO. MODAL (สำหรับเคสที่ไม่มี SAP No. ตอนแรก) -->
+<div class="modal-overlay" id="addsap-modal">
+  <div class="modal" style="width:420px;">
+    <div class="modal-header">
+      <h3>เพิ่มเลข SAP</h3>
+      <button class="modal-close" onclick="closeAddSapModal()">✕</button>
+    </div>
+    <div class="form-group full">
+      <label>เลขที่ SAP</label>
+      <input type="text" id="addsap-input" placeholder="กรอกเลขที่ SAP">
+    </div>
+    <div style="margin-top:14px;display:flex;gap:8px;">
+      <button class="btn btn-success" onclick="saveAddSap()">💾 บันทึก</button>
+      <button class="btn btn-outline" onclick="closeAddSapModal()">ยกเลิก</button>
+    </div>
+  </div>
+</div>
+
 <!-- EDIT MODAL -->
 <div class="modal-overlay" id="edit-modal">
   <div class="modal">
@@ -324,6 +394,7 @@ function showPage(p, btn) {
     if(p==='cases') renderCases();
     if(p==='summary') renderSummary();
     if(p==='pending') renderPending();
+    if(p==='sapclose') renderSapClose();
   });
 }
 function showTab(t) {
@@ -696,7 +767,7 @@ function renderCases() {
     <td>${fmtDate(c.date)}</td>
     <td>${c.seq||''}</td>
     <td>${c.jobNo||''}</td>
-    <td style="font-weight:500;">${c.sapNo||''}</td>
+    <td style="font-weight:500;">${c.sapNo || `<button class="btn btn-outline btn-sm" onclick="openAddSapModal('${c.id}')" style="padding:2px 8px;font-size:11px;">+ เพิ่ม SAP</button>`}</td>
     <td>${c.notifyTime||''}</td>
     <td style="max-width:110px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${c.location||''}">${c.location||''}</td>
     <td style="max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${c.problem||''}">${c.problem||''}</td>
@@ -859,7 +930,7 @@ function renderPending() {
   if(!cases.length) { html+='<div class="no-data">✅ ไม่มีเคสค้างดำเนินการ</div></div>'; }
   else {
     html+=`<div class="tbl-wrap"><table>
-    <thead><tr><th>พื้นที่</th><th>วันที่</th><th>ลำดับ</th><th>SAP No.</th><th>Job No.</th><th>เวลาแจ้ง</th><th>บริเวณ</th><th>ปัญหา</th><th>KPI1</th><th>KPI2</th><th>อายุ (วัน)</th></tr></thead>
+    <thead><tr><th>พื้นที่</th><th>วันที่</th><th>ลำดับ</th><th>SAP No.</th><th>Job No.</th><th>เวลาแจ้ง</th><th>บริเวณ</th><th>ปัญหา</th><th>KPI1</th><th>KPI2</th><th>อายุ (วัน)</th><th>เหตุผลที่ค้าง</th></tr></thead>
     <tbody>${cases.map(c=>{
       const age=c.date?Math.floor((Date.now()-new Date(c.date).getTime())/86400000):0;
       return `<tr>
@@ -871,10 +942,182 @@ function renderPending() {
         <td style="max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${c.problem||''}">${c.problem||''}</td>
         <td>${badgeKPI(c.kpi1)}</td><td>${badgeKPI(c.kpi2)}</td>
         <td style="color:${age>7?'#c0392b':age>3?'#d97706':'#1e7e4a'};font-weight:600;">${age}</td>
+        <td>
+          <input type="text" value="${(c.pendingReason||'').replace(/"/g,'&quot;')}" placeholder="ระบุเหตุผล..."
+            style="width:160px;padding:4px 8px;border:1px solid #ccd4de;border-radius:4px;font-size:12px;font-family:inherit;"
+            onchange="updatePendingReason('${c.id}', this.value)">
+        </td>
       </tr>`;
     }).join('')}</tbody></table></div></div>`;
   }
   document.getElementById('pending-content').innerHTML=html;
+}
+
+async function updatePendingReason(id, reason) {
+  const c = db.find(x => x.id === id);
+  if(!c) return;
+  try {
+    const updated = await apiPut(`/api/cases/${id}`, {...c, pendingReason: reason});
+    const idx = db.findIndex(x=>x.id===id);
+    if(idx>=0) db[idx] = updated;
+  } catch(e) {
+    alert('บันทึกเหตุผลไม่สำเร็จ: ' + e.message);
+  }
+}
+
+// ─── SAP CLOSE PAGE ───────────────────────────────────
+const SAP_STATUS_LABEL = {
+  pending: 'รอปิด SAP', closed: 'ปิด SAP', failed: 'ปิด SAP ไม่สำเร็จ'
+};
+const SAP_STATUS_BADGE = {
+  pending: 'badge-pending', closed: 'badge-pass', failed: 'badge-fail'
+};
+
+function clearSapFilters() {
+  document.getElementById('sap-area').value = 'ALL';
+  document.getElementById('sap-from').value = '';
+  document.getElementById('sap-to').value = '';
+  document.getElementById('sap-status-filter').value = 'ALL';
+  renderSapClose();
+}
+
+function renderSapClose() {
+  const area   = document.getElementById('sap-area').value;
+  const from   = document.getElementById('sap-from').value;
+  const to     = document.getElementById('sap-to').value;
+  const status = document.getElementById('sap-status-filter').value;
+
+  // หน้านี้รวมเฉพาะเคสที่ "มีเลข SAP" เท่านั้น
+  let cases = db.filter(c => c.sapNo);
+  if(area !== 'ALL') cases = cases.filter(c => c.area === area);
+  if(from) cases = cases.filter(c => c.date && c.date >= from);
+  if(to)   cases = cases.filter(c => c.date && c.date <= to);
+  if(status !== 'ALL') cases = cases.filter(c => (c.sapStatus || 'pending') === status);
+  cases.sort((a,b)=>(b.date+b.notifyTime).localeCompare(a.date+a.notifyTime));
+
+  document.getElementById('sap-count').textContent = `พบ ${cases.length} เคส`;
+
+  // สรุปจำนวนแต่ละสถานะ (จาก cases ที่มี SAP ทั้งหมด ไม่ขึ้นกับ filter สถานะ)
+  let baseCases = db.filter(c => c.sapNo);
+  if(area !== 'ALL') baseCases = baseCases.filter(c => c.area === area);
+  if(from) baseCases = baseCases.filter(c => c.date && c.date >= from);
+  if(to)   baseCases = baseCases.filter(c => c.date && c.date <= to);
+  const cPending = baseCases.filter(c => (c.sapStatus||'pending')==='pending').length;
+  const cClosed  = baseCases.filter(c => c.sapStatus==='closed').length;
+  const cFailed  = baseCases.filter(c => c.sapStatus==='failed').length;
+
+  let html = `<div class="stats-grid" style="margin-bottom:14px;">
+    <div class="stat"><div class="stat-num">${baseCases.length}</div><div class="stat-label">เคสที่มี SAP No.</div></div>
+    <div class="stat orange"><div class="stat-num">${cPending}</div><div class="stat-label">รอปิด SAP</div></div>
+    <div class="stat green"><div class="stat-num">${cClosed}</div><div class="stat-label">ปิด SAP แล้ว</div></div>
+    <div class="stat red"><div class="stat-num">${cFailed}</div><div class="stat-label">ปิด SAP ไม่สำเร็จ</div></div>
+  </div>`;
+
+  html += '<div class="card" style="padding:0;overflow:hidden;">';
+  if(!cases.length) {
+    html += '<div class="no-data">ไม่มีข้อมูล</div>';
+  } else {
+    html += `<div class="tbl-wrap"><table>
+    <thead><tr><th>พื้นที่</th><th>วันที่</th><th>SAP No.</th><th>Job No.</th><th>บริเวณ</th><th>ปัญหา</th><th>สถานะ</th><th>เหตุผล (ถ้าไม่สำเร็จ)</th><th>จัดการ</th></tr></thead>
+    <tbody>${cases.map(c => {
+      const st = c.sapStatus || 'pending';
+      return `<tr>
+        <td><span class="badge badge-${(c.area||'').toLowerCase()}">${c.area||''}</span></td>
+        <td>${fmtDate(c.date)}</td>
+        <td style="font-weight:500;">${c.sapNo||''}</td>
+        <td>${c.jobNo||''}</td>
+        <td style="max-width:110px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${c.location||''}">${c.location||''}</td>
+        <td style="max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${c.problem||''}">${c.problem||''}</td>
+        <td><span class="badge ${SAP_STATUS_BADGE[st]}">${SAP_STATUS_LABEL[st]}</span></td>
+        <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${c.sapFailReason||''}">${st==='failed' ? (c.sapFailReason||'—') : ''}</td>
+        <td style="white-space:nowrap;">
+          <button class="btn btn-outline btn-sm" onclick="openSapModal('${c.id}')">⚙️ สถานะ</button>
+        </td>
+      </tr>`;
+    }).join('')}</tbody></table></div>`;
+  }
+  html += '</div>';
+
+  document.getElementById('sapclose-content').innerHTML = html;
+}
+
+let _sapModalId = null;
+
+function openSapModal(id) {
+  _sapModalId = id;
+  const c = db.find(x => x.id === id);
+  if(!c) return;
+  document.getElementById('sap-modal-info').innerHTML =
+    `<strong>${c.area}</strong> — SAP No. <strong>${c.sapNo}</strong><br>${c.problem||''}`;
+  const st = c.sapStatus || 'pending';
+  document.getElementById('sap-modal-status').value = st;
+  document.getElementById('sap-modal-reason').value = c.sapFailReason || '';
+  toggleSapReasonField();
+  document.getElementById('sap-modal').classList.add('open');
+}
+
+function toggleSapReasonField() {
+  const st = document.getElementById('sap-modal-status').value;
+  document.getElementById('sap-modal-reason-wrap').style.display = st === 'failed' ? 'block' : 'none';
+}
+
+function closeSapModal() {
+  document.getElementById('sap-modal').classList.remove('open');
+  _sapModalId = null;
+}
+
+async function saveSapStatus() {
+  if(!_sapModalId) return;
+  const status = document.getElementById('sap-modal-status').value;
+  const reason = document.getElementById('sap-modal-reason').value;
+  try {
+    const updated = await fetch(`/api/cases/${_sapModalId}/sap`, {
+      method: 'PUT', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ sapStatus: status, sapFailReason: status === 'failed' ? reason : '' })
+    });
+    if(!updated.ok) { const e = await safeJsonParse(updated); throw new Error(e.error || updated.statusText); }
+    const result = await safeJsonParse(updated);
+    const idx = db.findIndex(x => x.id === _sapModalId);
+    if(idx >= 0) db[idx] = result;
+    closeSapModal();
+    renderSapClose();
+  } catch(e) {
+    alert('บันทึกสถานะไม่สำเร็จ: ' + e.message);
+  }
+}
+
+// ─── ADD SAP NO. LATER (สำหรับเคสที่ไม่มี SAP ตอนแรก) ──
+let _addSapId = null;
+
+function openAddSapModal(id) {
+  _addSapId = id;
+  document.getElementById('addsap-input').value = '';
+  document.getElementById('addsap-modal').classList.add('open');
+}
+
+function closeAddSapModal() {
+  document.getElementById('addsap-modal').classList.remove('open');
+  _addSapId = null;
+}
+
+async function saveAddSap() {
+  if(!_addSapId) return;
+  const sapNo = document.getElementById('addsap-input').value.trim();
+  if(!sapNo) { alert('กรุณากรอกเลขที่ SAP'); return; }
+  try {
+    const r = await fetch(`/api/cases/${_addSapId}/sap`, {
+      method: 'PUT', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ sapNo })
+    });
+    if(!r.ok) { const e = await safeJsonParse(r); throw new Error(e.error || r.statusText); }
+    const result = await safeJsonParse(r);
+    const idx = db.findIndex(x => x.id === _addSapId);
+    if(idx >= 0) db[idx] = result;
+    closeAddSapModal();
+    renderCases();
+  } catch(e) {
+    alert('เพิ่มเลข SAP ไม่สำเร็จ: ' + e.message);
+  }
 }
 
 // ─── EXPORT ───────────────────────────────────────────
