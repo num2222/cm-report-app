@@ -529,8 +529,12 @@ function parseLine() {
   }
 
   const dateISO = parseThaiDate(extract('วันที่'));
-  const seqM = txt.match(/[A-Z]+_(\d+)/);
-  const seq = seqM ? seqM[1] : '';
+
+  // ── seq: รองรับรูปแบบ MTB_01, Z3_01, SAT-1_01, FZ_01 ฯลฯ ──────────────
+  // pattern: ตัวอักษร/ตัวเลข/ขีด ตามด้วย _ แล้วตามด้วยตัวเลข
+  // ต้องอยู่ต้นบรรทัด (^ ใน multiline) เพื่อกัน match กลาง text
+  const seqM = txt.match(/^([A-Z0-9][\w-]*)_(\d+)/m);
+  const seq = seqM ? seqM[2] : '';
 
   const approveRaw = extract('เวลาอนุมัติการซ่อม');
   const arriveRaw = extract('เวลาที่ถึงหน้างาน');
@@ -557,6 +561,16 @@ function parseLine() {
   // location: ลอง บริเวณ ก่อน ถ้าไม่ได้ใช้ พื้นที่
   const locationRaw = extract('บริเวณ') || extract('พื้นที่');
 
+  // ── solution: ต้อง match "การแก้ไข" แบบ exact word เพื่อไม่ให้ match กับ
+  // "เวลาเริ่มการแก้ไข" หรือ "สาเหตุการแก้ไข" ฯลฯ
+  // ใช้ lookbehind (\n หรือ ^ ก่อน key) กัน partial match
+  function extractExact(key) {
+    const re = new RegExp('(?:^|\\n)' + key + '[ \\t]*[:：][ \\t]*([^\\r\\n]*)', 'i');
+    const m = txt.match(re);
+    if(m) return m[1].trim();
+    return '';
+  }
+
   const c = {
     area, date: dateISO, seq,
     jobNo: extract('เลขที่ใบงาน'),
@@ -566,8 +580,8 @@ function parseLine() {
     responseTime: responseRaw.replace(/น\.?$/, '').trim(),
     std, approveTime, arriveTime, startTime, closeTime,
     location: locationRaw,
-    problem: extract('ปัญหาหน้างาน'),
-    solution: extract('การแก้ไข'),
+    problem: extractExact('ปัญหาหน้างาน'),
+    solution: extractExact('การแก้ไข'),
     reporter: extract('ผู้แจ้ง'),
     receiver: extract('ผู้รับแจ้ง'),
     technician: extract('ช่างผู้ทำการซ่อม'),
