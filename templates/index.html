@@ -947,7 +947,9 @@ function renderSummary() {
 function renderPending() {
   const month = document.getElementById('pending-month').value;
   const area = document.getElementById('pending-area').value;
-  let cases = db.filter(c => !c.closeTime);
+  // ค้างดำเนินการ = ไม่มีเวลาปิดงาน AND KPI3 ≠ pass
+  // (ถ้า KPI3 pass = ดุลพินิจผ่าน = ถือว่าเสร็จแล้ว ไม่ขึ้นในหน้านี้)
+  let cases = db.filter(c => !c.closeTime && c.kpi3 !== 'pass');
   if(month) cases = cases.filter(c => c.date && c.date.startsWith(month));
   if(area !== 'ALL') cases = cases.filter(c => c.area === area);
   cases.sort((a,b)=>(a.date+a.notifyTime).localeCompare(b.date+b.notifyTime));
@@ -1043,7 +1045,7 @@ function renderSapClose() {
     html += '<div class="no-data">ไม่มีข้อมูล</div>';
   } else {
     html += `<div class="tbl-wrap"><table>
-    <thead><tr><th>พื้นที่</th><th>วันที่</th><th>SAP No.</th><th>Job No.</th><th>บริเวณ</th><th>ปัญหา</th><th>สถานะ</th><th>เหตุผล (ถ้าไม่สำเร็จ)</th><th>จัดการ</th></tr></thead>
+    <thead><tr><th>พื้นที่</th><th>วันที่</th><th>SAP No.</th><th>Job No.</th><th>บริเวณ</th><th>ปัญหา</th><th>KPI3</th><th>สถานะ</th><th>เหตุผล (ถ้าไม่สำเร็จ)</th><th>จัดการ</th></tr></thead>
     <tbody>${cases.map(c => {
       const st = c.sapStatus || 'pending';
       return `<tr>
@@ -1053,6 +1055,7 @@ function renderSapClose() {
         <td>${c.jobNo||''}</td>
         <td style="max-width:110px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${c.location||''}">${c.location||''}</td>
         <td style="max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${c.problem||''}">${c.problem||''}</td>
+        <td>${badgeKPI(c.kpi3)}</td>
         <td><span class="badge ${SAP_STATUS_BADGE[st]}">${SAP_STATUS_LABEL[st]}</span></td>
         <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${c.sapFailReason||''}">${st==='failed' ? (c.sapFailReason||'—') : ''}</td>
         <td style="white-space:nowrap;">
