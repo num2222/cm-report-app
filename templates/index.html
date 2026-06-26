@@ -206,6 +206,8 @@ textarea.paste-box { width: 100%; height: 200px; font-family: 'Courier New', mon
     </select>
     <label>จากวันที่</label><input type="date" id="filter-from" onchange="renderCases()">
     <label>ถึงวันที่</label><input type="date" id="filter-to" onchange="renderCases()">
+    <input type="text" id="filter-jobno" placeholder="🔍 ค้นหา Job No." oninput="renderCases()"
+      style="padding:6px 10px;border:1px solid #ccd4de;border-radius:6px;font-size:13px;width:150px;font-family:inherit;">
     <button class="btn btn-outline btn-sm" onclick="clearFilters()">ล้าง</button>
     <span id="case-count" style="font-size:12px;color:#888;"></span>
   </div>
@@ -261,7 +263,10 @@ textarea.paste-box { width: 100%; height: 200px; font-family: 'Courier New', mon
       <option value="closed">ปิด SAP</option>
       <option value="failed">ปิด SAP ไม่สำเร็จ</option>
     </select>
+    <input type="text" id="sap-search-no" placeholder="🔍 ค้นหา SAP No." oninput="renderSapClose()"
+      style="padding:6px 10px;border:1px solid #ccd4de;border-radius:6px;font-size:13px;width:150px;font-family:inherit;">
     <button class="btn btn-outline btn-sm" onclick="clearSapFilters()">ล้าง</button>
+    <button class="btn btn-success btn-sm" onclick="exportSapExcel(event)">📊 Export Excel</button>
     <span id="sap-count" style="font-size:12px;color:#888;"></span>
   </div>
   <div id="sapclose-content"></div>
@@ -783,13 +788,15 @@ function renderDashboard() {
 
 // ─── CASES TABLE ──────────────────────────────────────
 function renderCases() {
-  const area = document.getElementById('filter-area').value;
-  const from = document.getElementById('filter-from').value; // YYYY-MM-DD
-  const to = document.getElementById('filter-to').value;     // YYYY-MM-DD
+  const area  = document.getElementById('filter-area').value;
+  const from  = document.getElementById('filter-from').value;
+  const to    = document.getElementById('filter-to').value;
+  const jobNo = (document.getElementById('filter-jobno').value || '').trim().toLowerCase();
   let cases = [...db];
   if(area !== 'ALL') cases = cases.filter(c => c.area === area);
   if(from) cases = cases.filter(c => c.date && c.date >= from);
-  if(to) cases = cases.filter(c => c.date && c.date <= to);
+  if(to)   cases = cases.filter(c => c.date && c.date <= to);
+  if(jobNo) cases = cases.filter(c => (c.jobNo||'').toLowerCase().includes(jobNo));
   // เรียงตามวันที่ (ใหม่สุดก่อน) แล้วตามด้วยลำดับเคสต่อวัน (seq) จากน้อยไปมาก
   cases.sort((a,b) => {
     const dateCompare = (b.date||'').localeCompare(a.date||'');
@@ -813,7 +820,7 @@ function renderCases() {
     <td>${badgeKPI(c.kpi1)}</td>
     <td>${badgeKPI(c.kpi2)}</td>
     <td>${badgeKPI(c.kpi3)}</td>
-    <td>${c.closeTime?`<span class="badge badge-pass">${c.closeTime}</span>`:'<span class="badge badge-pending">ค้าง</span>'}</td>
+    <td>${c.cancelled ? '<span class="badge" style="background:#ffeeba;color:#856404;">ยกเลิก</span>' : c.closeTime?`<span class="badge badge-pass">${c.closeTime}</span>`:'<span class="badge badge-pending">ค้าง</span>'}</td>
     <td style="white-space:nowrap;">
       <button class="btn btn-outline btn-sm" onclick="openEdit('${c.id}')">✏️</button>
       <button class="btn btn-danger btn-sm" onclick="deleteCase('${c.id}')">🗑</button>
@@ -824,6 +831,7 @@ function clearFilters() {
   document.getElementById('filter-area').value = 'ALL';
   document.getElementById('filter-from').value = '';
   document.getElementById('filter-to').value = '';
+  document.getElementById('filter-jobno').value = '';
   renderCases();
 }
 async function deleteCase(id) {
@@ -862,13 +870,27 @@ function openEdit(id) {
     ['reporter','ผู้แจ้ง','text',null],
     ['receiver','ผู้รับแจ้ง','text',null],
   ];
-  document.getElementById('edit-form-fields').innerHTML = fields.map(([key,label,type,opts])=>{
+  let html = fields.map(([key,label,type,opts])=>{
     const val = c[key] || '';
     if(type === 'select') {
       return `<div class="form-group"><label>${label}</label><select id="edit-${key}">${(opts||[]).map(o=>`<option value="${o}"${o===val?' selected':''}>${o||'-- ยังไม่กำหนด --'}</option>`).join('')}</select></div>`;
     }
     return `<div class="form-group"><label>${label}</label><input type="${type}" id="edit-${key}" value="${val}"></div>`;
   }).join('');
+
+  // ── ยกเลิกใบงาน ─────────────────────────────────────────────
+  html += `<div class="form-group full" style="grid-column:1/-1;border-top:2px solid #f8d7da;margin-top:8px;padding-top:12px;">
+    <label style="color:#c0392b;font-weight:600;">⚠️ ยกเลิกใบงาน</label>
+    <div style="display:flex;align-items:center;gap:10px;margin-top:6px;">
+      <input type="checkbox" id="edit-cancelled" ${c.cancelled?'checked':''} style="width:18px;height:18px;cursor:pointer;">
+      <span style="font-size:13px;color:#555;">ทำเครื่องหมายถ้าต้องการยกเลิกใบงานนี้ — จะไม่นำมาคำนวณ KPI1, KPI2, KPI3</span>
+    </div>
+    <div style="font-size:12px;color:#888;margin-top:4px;">
+      ℹ️ ถ้ามีเลข SAP No. ยังคงแสดงในหน้า "ปิด SAP" ตามปกติ | Export Excel จะแสดง "ยกเลิกใบงาน" ในคอลัมน์หมายเหตุแทน
+    </div>
+  </div>`;
+
+  document.getElementById('edit-form-fields').innerHTML = html;
   document.getElementById('edit-modal').classList.add('open');
 }
 
@@ -879,10 +901,20 @@ async function saveEdit() {
                 'approveTime','arriveTime','startTime','closeTime','kpi3',
                 'location','problem','solution','technician','reporter','receiver'];
   keys.forEach(f => { const el = document.getElementById('edit-'+f); if(el) c[f] = el.value; });
-  // ถ้าไม่มี startTime ให้ใช้ arriveTime
+
+  // ── ยกเลิกใบงาน ─────────────────────────────────────────────
+  const cancelledEl = document.getElementById('edit-cancelled');
+  c.cancelled = cancelledEl ? cancelledEl.checked : false;
+
   if(!c.startTime) c.startTime = c.arriveTime;
-  c.kpi1 = calcKPI1(c.notifyTime, c.arriveTime, c.responseTime, c.approveTime);
-  c.kpi2 = calcKPI2(c.startTime, c.closeTime, c.std);
+
+  // ถ้ายกเลิกใบงาน → ล้างค่า KPI ทั้งหมด ไม่คำนวณ
+  if(c.cancelled) {
+    c.kpi1 = ''; c.kpi2 = ''; c.kpi3 = '';
+  } else {
+    c.kpi1 = calcKPI1(c.notifyTime, c.arriveTime, c.responseTime, c.approveTime);
+    c.kpi2 = calcKPI2(c.startTime, c.closeTime, c.std);
+  }
   try {
     const updated = await apiPut(`/api/cases/${editingId}`, c);
     const idx = db.findIndex(x=>x.id===editingId);
@@ -961,9 +993,8 @@ function renderSummary() {
 function renderPending() {
   const month = document.getElementById('pending-month').value;
   const area = document.getElementById('pending-area').value;
-  // ค้างดำเนินการ = ไม่มีเวลาปิดงาน AND KPI3 ≠ pass
-  // (ถ้า KPI3 pass = ดุลพินิจผ่าน = ถือว่าเสร็จแล้ว ไม่ขึ้นในหน้านี้)
-  let cases = db.filter(c => !c.closeTime && c.kpi3 !== 'pass');
+  // ค้างดำเนินการ = ไม่มีเวลาปิดงาน AND KPI3 ≠ pass AND ไม่ได้ยกเลิกใบงาน
+  let cases = db.filter(c => !c.closeTime && c.kpi3 !== 'pass' && !c.cancelled);
   if(month) cases = cases.filter(c => c.date && c.date.startsWith(month));
   if(area !== 'ALL') cases = cases.filter(c => c.area === area);
   cases.sort((a,b)=>(a.date+a.notifyTime).localeCompare(b.date+b.notifyTime));
@@ -1013,6 +1044,56 @@ const SAP_STATUS_LABEL = {
 const SAP_STATUS_BADGE = {
   pending: 'badge-pending', closed: 'badge-pass', failed: 'badge-fail'
 };
+
+async function exportSapExcel(ev) {
+  const btn = ev ? ev.currentTarget : null;
+  const orig = btn ? btn.textContent : '';
+  if(btn) { btn.textContent = '⏳ Export...'; btn.disabled = true; }
+
+  const area   = document.getElementById('sap-area').value;
+  const from   = document.getElementById('sap-from').value;
+  const to     = document.getElementById('sap-to').value;
+  const status = document.getElementById('sap-status-filter').value;
+  const sapSearch = (document.getElementById('sap-search-no').value || '').trim().toLowerCase();
+
+  // filter ตาม logic เดียวกับ renderSapClose
+  let cases = db.filter(c => c.sapNo);
+  if(area !== 'ALL') cases = cases.filter(c => c.area === area);
+  if(from) cases = cases.filter(c => c.date && c.date >= from);
+  if(to)   cases = cases.filter(c => c.date && c.date <= to);
+  if(status !== 'ALL') cases = cases.filter(c => (c.sapStatus || 'pending') === status);
+  if(sapSearch) cases = cases.filter(c => (c.sapNo||'').toLowerCase().includes(sapSearch));
+  cases.sort((a,b) => {
+    const d = (b.date||'').localeCompare(a.date||'');
+    return d !== 0 ? d : _seqNum(a) - _seqNum(b);
+  });
+
+  if(!cases.length) { alert('ไม่มีข้อมูล'); if(btn){btn.textContent=orig;btn.disabled=false;} return; }
+
+  try {
+    const resp = await fetch('/api/export/sap', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ cases, filters: { area, from, to, status } })
+    });
+    if(resp.status === 401) { window.location.href = '/login'; return; }
+    if(!resp.ok) throw new Error(await resp.text());
+    const blob = await resp.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = 'CM_SAP_Status.xlsx'; a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  } catch(e) {
+    console.error('SAP Export error:', e);
+    alert('Export ไม่สำเร็จ: ' + e.message);
+  } finally {
+    if(btn) { btn.textContent = orig; btn.disabled = false; }
+  }
+}
+
+function _seqNum(c) {
+  try { return parseInt(c.seq) || 0; } catch { return 0; }
+}
 
 function clearSapFilters() {
   document.getElementById('sap-area').value = 'ALL';
