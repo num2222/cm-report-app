@@ -102,9 +102,13 @@ textarea.paste-box { width: 100%; height: 200px; font-family: 'Courier New', mon
   <button class="nav-btn" onclick="showPage('pending',this)">ค้างดำเนินการ</button>
   <button class="nav-btn" onclick="showPage('sapclose',this)">ปิด SAP</button>
   <div style="margin-left:auto;display:flex;align-items:center;gap:4px;">
-    <button class="nav-btn" onclick="doBackup()" title="Backup ข้อมูลทั้งหมดเป็น JSON" style="color:#7dd3fc;">💾 Backup</button>
-    <label class="nav-btn" style="cursor:pointer;color:#7dd3fc;" title="Import ข้อมูลจากไฟล์ Backup">
-      📂 Import<input type="file" id="import-file" accept=".json" style="display:none;" onchange="doImport(this)">
+    <button onclick="doBackup()" title="💾 Backup ข้อมูลทั้งหมดเป็น JSON"
+      style="background:none;border:none;cursor:pointer;font-size:18px;opacity:0.6;padding:4px 6px;line-height:1;"
+      onmouseover="this.style.opacity='1'" onmouseout="this.style.opacity='0.6'">💾</button>
+    <label title="📂 Import ข้อมูลจากไฟล์ Backup"
+      style="background:none;border:none;cursor:pointer;font-size:18px;opacity:0.6;padding:4px 6px;line-height:1;margin:0;"
+      onmouseover="this.style.opacity='1'" onmouseout="this.style.opacity='0.6'">
+      📂<input type="file" id="import-file" accept=".json" style="display:none;" onchange="doImport(this)">
     </label>
     <button class="nav-btn" onclick="doLogout()" style="color:#ffb3b3;">ออกจากระบบ</button>
   </div>
@@ -1110,10 +1114,11 @@ function clearSapFilters() {
 }
 
 function renderSapClose() {
-  const area   = document.getElementById('sap-area').value;
-  const from   = document.getElementById('sap-from').value;
-  const to     = document.getElementById('sap-to').value;
-  const status = document.getElementById('sap-status-filter').value;
+  const area      = document.getElementById('sap-area').value;
+  const from      = document.getElementById('sap-from').value;
+  const to        = document.getElementById('sap-to').value;
+  const status    = document.getElementById('sap-status-filter').value;
+  const sapSearch = (document.getElementById('sap-search-no').value || '').trim().toLowerCase();
 
   // หน้านี้รวมเฉพาะเคสที่ "มีเลข SAP" เท่านั้น
   let cases = db.filter(c => c.sapNo);
@@ -1121,6 +1126,7 @@ function renderSapClose() {
   if(from) cases = cases.filter(c => c.date && c.date >= from);
   if(to)   cases = cases.filter(c => c.date && c.date <= to);
   if(status !== 'ALL') cases = cases.filter(c => (c.sapStatus || 'pending') === status);
+  if(sapSearch) cases = cases.filter(c => (c.sapNo||'').toLowerCase().includes(sapSearch));
   cases.sort((a,b)=>(b.date+b.notifyTime).localeCompare(a.date+a.notifyTime));
 
   document.getElementById('sap-count').textContent = `พบ ${cases.length} เคส`;
