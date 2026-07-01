@@ -543,7 +543,13 @@ function parseLine() {
     return '';
   }
 
-  const dateISO = parseThaiDate(extract('วันที่'));
+  // รองรับทั้ง "วันที่" (มีวรรณยุกต์) และ "วันที" (ไม่มีวรรณยุกต์) จากบางรูปแบบข้อความ Line
+  const dateRaw = (() => {
+    const re = /วันที่?[ \t]*[:：][ \t]*([^\r\n]*)/i;
+    const m = txt.match(re);
+    return m ? m[1].trim() : '';
+  })();
+  const dateISO = parseThaiDate(dateRaw);
 
   // ── seq: รองรับรูปแบบ MTB_01, Z3_01, SAT-1_01, FZ_01 ฯลฯ ──────────────
   // pattern: ตัวอักษร/ตัวเลข/ขีด ตามด้วย _ แล้วตามด้วยตัวเลข
