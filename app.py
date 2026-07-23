@@ -58,6 +58,7 @@ class Case(db.Model):
     arrive_time   = db.Column(db.String(20))
     start_time    = db.Column(db.String(20))
     close_time    = db.Column(db.String(20))
+    close_date    = db.Column(db.String(10))   # วันที่ปิดงาน (กรณีปิดข้ามวัน)
     location      = db.Column(db.Text)
     problem       = db.Column(db.Text)
     solution      = db.Column(db.Text)
@@ -72,7 +73,7 @@ class Case(db.Model):
     sap_fail_reason = db.Column(db.Text)
     pending_reason  = db.Column(db.Text)
     # ── ยกเลิกใบงาน ───────────────────────────────────────
-    cancelled     = db.Column(db.Boolean, default=False)   # True = ยกเลิกใบงาน (ไม่คำนวณ KPI)
+    cancelled     = db.Column(db.Boolean, default=False)
     created_at    = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at    = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -84,6 +85,7 @@ class Case(db.Model):
             'responseTime': self.response_time, 'std': self.std,
             'approveTime': self.approve_time, 'arriveTime': self.arrive_time,
             'startTime': self.start_time, 'closeTime': self.close_time,
+            'closeDate': self.close_date or '',
             'location': self.location, 'problem': self.problem,
             'solution': self.solution, 'reporter': self.reporter,
             'receiver': self.receiver, 'technician': self.technician,
@@ -102,6 +104,7 @@ with app.app_context():
         "ALTER TABLE cases ADD COLUMN IF NOT EXISTS sap_fail_reason TEXT",
         "ALTER TABLE cases ADD COLUMN IF NOT EXISTS pending_reason TEXT",
         "ALTER TABLE cases ADD COLUMN IF NOT EXISTS cancelled BOOLEAN DEFAULT FALSE",
+        "ALTER TABLE cases ADD COLUMN IF NOT EXISTS close_date VARCHAR(10)",
     ]
     try:
         with db.engine.connect() as conn:
@@ -175,6 +178,7 @@ def apply_dict(c, d):
     c.arrive_time  = _trunc(d.get('arriveTime',''), 20)
     c.start_time   = _trunc(d.get('startTime','') or d.get('arriveTime',''), 20)
     c.close_time   = _trunc(d.get('closeTime',''), 20)
+    c.close_date   = _trunc(d.get('closeDate','') or '', 10) or None
     c.location     = d.get('location','')      # Text column — ไม่จำกัด
     c.problem      = d.get('problem','')        # Text column — ไม่จำกัด
     c.solution     = d.get('solution','')       # Text column — ไม่จำกัด
@@ -292,8 +296,11 @@ def get_cases():
 def add_case():
     d   = request.get_json()
     sap = (d.get('sapNo','') or '').strip()
+    job = (d.get('jobNo','') or '').strip()
     if sap and Case.query.filter_by(sap_no=sap).first():
         return jsonify(error=f'SAP No. {sap} มีในฐานข้อมูลแล้ว'), 409
+    if job and Case.query.filter_by(job_no=job).first():
+        return jsonify(error=f'Job No. {job} มีในฐานข้อมูลแล้ว'), 409
     c   = apply_dict(Case(), d)
     c.id = d.get('id') or gen_id()
     db.session.add(c)
@@ -306,10 +313,15 @@ def update_case(cid):
     c = Case.query.get_or_404(cid)
     d = request.get_json()
     sap = (d.get('sapNo','') or '').strip()
+    job = (d.get('jobNo','') or '').strip()
     if sap and sap != c.sap_no:
         dup = Case.query.filter_by(sap_no=sap).first()
         if dup and dup.id != cid:
             return jsonify(error=f'SAP No. {sap} มีในฐานข้อมูลแล้ว'), 409
+    if job and job != c.job_no:
+        dup = Case.query.filter_by(job_no=job).first()
+        if dup and dup.id != cid:
+            return jsonify(error=f'Job No. {job} มีในฐานข้อมูลแล้ว'), 409
     apply_dict(c, d)
     c.updated_at = datetime.utcnow()
     db.session.commit()
@@ -381,7 +393,9 @@ def _write_rows(ws, cases, start_row=8):
         set_cell(ws, r,  2, c.get('jobNo',''),         align=center)
         set_cell(ws, r,  3, c.get('sapNo',''),         align=center)
         set_cell(ws, r,  4, c.get('notifyTime',''),    align=center)
-        set_cell(ws, r,  5, c.get('location',''),      align=wrap)
+        # col E = พื้นที่ & บริเวณ (area + location รวมกัน)
+        area_loc = ' '.join(filter(None, [c.get('area',''), c.get('location','')]))
+        set_cell(ws, r,  5, area_loc,                  align=wrap)
         set_cell(ws, r,  6, c.get('problem',''),       align=wrap)
         set_cell(ws, r,  7, c.get('kpiVal',''),        align=center)
         set_cell(ws, r,  8, c.get('responseTime',''),  align=center)
@@ -401,14 +415,18 @@ def _write_rows(ws, cases, start_row=8):
         set_cell(ws, r, 14, STD_LABELS.get(std,''),    align=center)
         set_cell(ws, r, 15, c.get('closeTime',''),     align=center)
 
+        # col Q = หมายเหตุ
+        close_date = c.get('closeDate','')
         if is_cancelled:
             set_cell(ws, r, 16, '', align=center)
-            set_cell(ws, r, 17, 'ยกเลิกใบงาน')   # col Q = หมายเหตุ
+            set_cell(ws, r, 17, 'ยกเลิกใบงาน')
         else:
             kpi2_val = _kpi2_export(c)
             set_cell(ws, r, 16, kpi_sym(kpi2_val),
                      font=kpi_font if kpi2_val=='pass' else kpi_font_fail,
                      align=center)
+            if close_date and close_date != c.get('date',''):
+                set_cell(ws, r, 17, f'ปิดงานวันที่ {fmt_be(close_date)}')
 
 @app.route('/api/export/daily', methods=['POST'])
 @login_required
@@ -500,11 +518,14 @@ def export_monthly():
         for i,c in enumerate(cases):
             r=3+i; std=c.get('std','')
             is_cancelled = c.get('cancelled', False)
+            close_date   = c.get('closeDate','')
             set_cell(ws, r,  1, c.get('seq') or (i+1))
             set_cell(ws, r,  2, c.get('jobNo',''))
             set_cell(ws, r,  3, c.get('sapNo',''))
             set_cell(ws, r,  4, c.get('notifyTime',''),   align=center)
-            set_cell(ws, r,  5, c.get('location',''),     align=wrap)
+            # col E = พื้นที่ & บริเวณ (area + location)
+            area_loc = ' '.join(filter(None,[c.get('area',''), c.get('location','')]))
+            set_cell(ws, r,  5, area_loc,                 align=wrap)
             set_cell(ws, r,  6, c.get('problem',''),      align=wrap)
             set_cell(ws, r,  7, c.get('kpiVal',''),       align=center)
             set_cell(ws, r,  8, c.get('responseTime',''), align=center)
@@ -523,6 +544,8 @@ def export_monthly():
                 set_kpi_cell(ws, r, 11, c.get('kpi1'))
                 set_kpi_cell(ws, r, 16, _kpi2_export(c))
                 set_kpi_cell(ws, r, 17, c.get('kpi3'))
+                if close_date and close_date != c.get('date',''):
+                    set_cell(ws, r, 18, f'ปิดงานวันที่ {fmt_be(close_date)}')
 
     for area in areas:
         cases = sorted([c for c in cases_all if c.get('area')==area],
