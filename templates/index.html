@@ -579,8 +579,11 @@ function parseLine() {
   else if(stdRaw.includes('7-14') || /14\s*วัน/.test(stdRaw)) std = 'E';
   else if(stdRaw.includes('เดือน')) std = 'F';
 
-  // location: ลอง บริเวณ ก่อน ถ้าไม่ได้ใช้ พื้นที่
-  const locationRaw = extract('บริเวณ') || extract('พื้นที่');
+  // รวม พื้นที่ + บริเวณ จาก Line เข้าด้วยกัน เพื่อให้ได้ข้อมูลสถานที่ครบ
+  // เช่น พื้นที่: MTB ชั้น 4, บริเวณ: ด้านตรวจสอบทางาน → "MTB ชั้น 4 ด้านตรวจสอบทางาน"
+  const subArea  = extract('พื้นที่');   // sub-location ใน Line (ไม่ใช่ area dropdown)
+  const vicinity = extract('บริเวณ');
+  const locationRaw = [subArea, vicinity].filter(Boolean).join(' ') || extract('สถานที่');
 
   // ── solution: ต้อง match "การแก้ไข" แบบ exact word เพื่อไม่ให้ match กับ
   // "เวลาเริ่มการแก้ไข" หรือ "สาเหตุการแก้ไข" ฯลฯ
