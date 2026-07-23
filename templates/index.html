@@ -653,11 +653,31 @@ function parseLine() {
     </div>`;
 }
 
+// ── ตรวจสอบวันที่ว่าตรงกับเดือน/ปีปัจจุบันไหม ──────────────────
+function checkDateWarning(dateISO) {
+  if(!dateISO) return null;
+  const now = new Date();
+  const [yr, mo] = dateISO.split('-').map(Number);
+  const nowYr = now.getFullYear(), nowMo = now.getMonth() + 1;
+  const thYr = yr + 543;  // แปลงเป็น พ.ศ. เพื่อแสดงผล
+  const warnings = [];
+  if(mo !== nowMo) warnings.push(`เดือนที่บันทึก ${mo.toString().padStart(2,'0')}/${thYr} ≠ เดือนปัจจุบัน ${nowMo.toString().padStart(2,'0')}/${now.getFullYear()+543}`);
+  if(yr !== nowYr) warnings.push(`ปีที่บันทึก ${thYr} ≠ ปีปัจจุบัน ${now.getFullYear()+543}`);
+  return warnings.length ? warnings : null;
+}
+
 async function confirmSave() {
   const c = window._pendingCase;
   if(!c) return;
+  const dateWarn = checkDateWarning(c.date);
+  if(dateWarn) {
+    if(!confirm(`⚠️ ตรวจพบความผิดปกติของวันที่:\n${dateWarn.join('\n')}\n\nต้องการบันทึกต่อไปหรือไม่?`)) return;
+  }
   if(c.sapNo && db.find(x => x.sapNo === c.sapNo)) {
     if(!confirm(`SAP No. ${c.sapNo} มีในฐานข้อมูลแล้ว ต้องการเพิ่มอีกครั้ง?`)) return;
+  }
+  if(c.jobNo && db.find(x => x.jobNo === c.jobNo)) {
+    if(!confirm(`Job No. ${c.jobNo} มีในฐานข้อมูลแล้ว ต้องการเพิ่มอีกครั้ง?`)) return;
   }
   try {
     const saved = await apiPost('/api/cases', c);
@@ -683,8 +703,16 @@ async function saveCase() {
   if(!area || !date || !sapNo) {
     document.getElementById('save-msg').innerHTML = '<div class="alert alert-error">กรุณากรอก พื้นที่, วันที่ และ SAP No.</div>'; return;
   }
+  const jobNo2 = document.getElementById('f-jobno').value.trim();
+  const dateWarn2 = checkDateWarning(date);
+  if(dateWarn2) {
+    if(!confirm(`⚠️ ตรวจพบความผิดปกติของวันที่:\n${dateWarn2.join('\n')}\n\nต้องการบันทึกต่อไปหรือไม่?`)) return;
+  }
   if(db.find(x => x.sapNo === sapNo)) {
     if(!confirm(`SAP No. ${sapNo} มีในฐานข้อมูลแล้ว ต้องการเพิ่ม?`)) return;
+  }
+  if(jobNo2 && db.find(x => x.jobNo === jobNo2)) {
+    if(!confirm(`Job No. ${jobNo2} มีในฐานข้อมูลแล้ว ต้องการเพิ่ม?`)) return;
   }
   const approveTime = document.getElementById('f-approve-time').value;
   const arriveTime = document.getElementById('f-arrive-time').value;
@@ -878,6 +906,7 @@ function openEdit(id) {
     ['arriveTime','เวลาที่ถึงหน้างาน','time',null],
     ['startTime','เวลาเริ่มการแก้ไข','time',null],
     ['closeTime','เวลาปิดงาน','time',null],
+    ['closeDate','วันที่ปิดงาน (กรณีปิดข้ามวัน)','date',null],
     ['kpi3','KPI3 ดุลพินิจ','select',['','pass','fail']],
     ['location','บริเวณ / สถานที่','text',null],
     ['problem','ปัญหาหน้างาน','text',null],
@@ -914,7 +943,7 @@ async function saveEdit() {
   const c = db.find(x => x.id === editingId);
   if(!c) return;
   const keys = ['area','date','seq','jobNo','sapNo','notifyTime','kpiVal','responseTime','std',
-                'approveTime','arriveTime','startTime','closeTime','kpi3',
+                'approveTime','arriveTime','startTime','closeTime','closeDate','kpi3',
                 'location','problem','solution','technician','reporter','receiver'];
   keys.forEach(f => { const el = document.getElementById('edit-'+f); if(el) c[f] = el.value; });
 
@@ -1018,7 +1047,13 @@ function renderPending() {
   if(!cases.length) { html+='<div class="no-data">✅ ไม่มีเคสค้างดำเนินการ</div></div>'; }
   else {
     html+=`<div class="tbl-wrap"><table>
-    <thead><tr><th>พื้นที่</th><th>วันที่</th><th>ลำดับ</th><th>SAP No.</th><th>Job No.</th><th>เวลาแจ้ง</th><th>บริเวณ</th><th>ปัญหา</th><th>KPI1</th><th>KPI2</th><th>อายุ (วัน)</th><th>เหตุผลที่ค้าง</th></tr></thead>
+    <thead><tr>
+      <th>พื้นที่</th><th>วันที่</th><th>ลำดับ</th><th>SAP No.</th><th>Job No.</th>
+      <th>เวลาแจ้ง</th><th>บริเวณ</th><th>ปัญหา</th><th>ช่าง</th>
+      <th>KPI1</th><th>KPI2</th><th>อายุ (วัน)</th>
+      <th>เวลาปิดงาน</th><th>วันที่ปิดงาน</th>
+      <th>เหตุผลที่ค้าง</th><th>จัดการ</th>
+    </tr></thead>
     <tbody>${cases.map(c=>{
       const age=c.date?Math.floor((Date.now()-new Date(c.date).getTime())/86400000):0;
       return `<tr>
@@ -1026,19 +1061,56 @@ function renderPending() {
         <td>${fmtDate(c.date)}</td><td>${c.seq||''}</td>
         <td style="font-weight:500;">${c.sapNo||''}</td><td>${c.jobNo||''}</td>
         <td>${c.notifyTime||''}</td>
-        <td style="max-width:110px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${c.location||''}">${c.location||''}</td>
-        <td style="max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${c.problem||''}">${c.problem||''}</td>
+        <td style="max-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${c.location||''}">${c.location||''}</td>
+        <td style="max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${c.problem||''}">${c.problem||''}</td>
+        <td style="max-width:80px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${c.technician||''}">${c.technician||''}</td>
         <td>${badgeKPI(c.kpi1)}</td><td>${badgeKPI(c.kpi2)}</td>
         <td style="color:${age>7?'#c0392b':age>3?'#d97706':'#1e7e4a'};font-weight:600;">${age}</td>
         <td>
+          <input type="time" id="pt-${c.id}" value="${c.closeTime||''}"
+            style="width:90px;padding:3px 6px;border:1px solid #ccd4de;border-radius:4px;font-size:12px;font-family:inherit;">
+        </td>
+        <td>
+          <input type="date" id="pd-${c.id}" value="${c.closeDate||c.date||''}"
+            style="width:130px;padding:3px 6px;border:1px solid #ccd4de;border-radius:4px;font-size:12px;font-family:inherit;">
+        </td>
+        <td>
           <input type="text" value="${(c.pendingReason||'').replace(/"/g,'&quot;')}" placeholder="ระบุเหตุผล..."
-            style="width:160px;padding:4px 8px;border:1px solid #ccd4de;border-radius:4px;font-size:12px;font-family:inherit;"
+            style="width:130px;padding:3px 6px;border:1px solid #ccd4de;border-radius:4px;font-size:12px;font-family:inherit;"
             onchange="updatePendingReason('${c.id}', this.value)">
+        </td>
+        <td style="white-space:nowrap;">
+          <button class="btn btn-success btn-sm" onclick="closePendingCase('${c.id}')">✔ ปิดเคส</button>
+          <button class="btn btn-outline btn-sm" onclick="openEdit('${c.id}')">✏️</button>
         </td>
       </tr>`;
     }).join('')}</tbody></table></div></div>`;
   }
   document.getElementById('pending-content').innerHTML=html;
+}
+
+async function closePendingCase(id) {
+  const closeTime = document.getElementById(`pt-${id}`)?.value;
+  const closeDate = document.getElementById(`pd-${id}`)?.value;
+  if(!closeTime) { alert('กรุณากรอกเวลาปิดงานก่อน'); return; }
+  const c = db.find(x => x.id === id);
+  if(!c) return;
+  // ปิดข้ามวัน = closeDate ต่างจาก date เดิม → KPI2 ไม่ผ่านเสมอ
+  const isCrossDay = closeDate && closeDate !== c.date;
+  try {
+    const updated = await apiPut(`/api/cases/${id}`, {
+      ...c,
+      closeTime,
+      closeDate: closeDate || c.date,
+      kpi2: isCrossDay ? 'fail' : c.kpi2   // ปิดข้ามวัน = fail KPI2
+    });
+    const idx = db.findIndex(x=>x.id===id);
+    if(idx>=0) db[idx] = updated;
+    renderPending();
+    if(isCrossDay) alert(`✅ ปิดเคสเรียบร้อย\n⚠️ ปิดงานข้ามวัน (${fmtDate(closeDate)}) — KPI2 ไม่ผ่าน`);
+  } catch(e) {
+    alert('ปิดเคสไม่สำเร็จ: ' + e.message);
+  }
 }
 
 async function updatePendingReason(id, reason) {
