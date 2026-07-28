@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block title %}บันทึกการโอนสต๊อก{% endblock %}
+{% block content %}
+<div class="card" style="max-width:600px;">
+  <h2>บันทึกการโอนสต๊อก (กลาง → ห้องช่าง)</h2>
+  <form method="post">
+    <label>สินค้า *</label>
+    <select name="item_id" required>
+      {% for it in items %}
+      <option value="{{ it.id }}">{{ it.name }} (สต๊อกกลางคงเหลือ {{ it.central_qty }} {{ it.unit }})</option>
+      {% endfor %}
+    </select>
+    <div class="form-row">
+      <div><label>จำนวนที่โอน *</label><input type="number" step="0.01" name="qty" required></div>
+      <div><label>วันที่โอน</label><input type="date" name="date_transferred"></div>
+    </div>
+    <label>ช่างที่มาเบิก</label>
+    <input type="text" name="technician">
+    <label>หมายเหตุ</label>
+    <textarea name="note" rows="2" placeholder="เช่น เบิกไป 1 กล่อง (12 หลอด) เตรียมเปลี่ยนที่ Z2"></textarea>
+    <div style="margin-top:16px;">
+      <button class="btn" type="submit">บันทึก (หักสต๊อกกลาง เพิ่มสต๊อกห้องช่างทันที)</button>
+      <a class="btn secondary" href="{{ url_for('transfers_list') }}">ยกเลิก</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

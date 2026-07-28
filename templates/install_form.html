@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block title %}{{ 'แก้ไขการติดตั้ง' if rec else 'บันทึกการติดตั้ง' }}{% endblock %}
+{% block content %}
+<div class="card" style="max-width:600px;">
+  <h2>{{ 'แก้ไขรายการติดตั้ง/เปลี่ยนอะไหล่' if rec else 'บันทึกการติดตั้ง/เปลี่ยนอะไหล่' }}</h2>
+  <form method="post">
+    <label>สินค้า *</label>
+    <select name="item_id" required>
+      {% for it in items %}
+      <option value="{{ it.id }}" {{ 'selected' if rec and rec.item_id == it.id else '' }}>{{ it.display_name() }} (สต๊อกห้องช่างคงเหลือ {{ it.tech_room_qty }} {{ it.unit }})</option>
+      {% endfor %}
+    </select>
+    <div class="form-row">
+      <div><label>จำนวนที่ติดตั้ง *</label><input type="number" step="0.01" name="qty" required value="{{ rec.qty if rec else '' }}"></div>
+      <div><label>วันที่ติดตั้ง</label><input type="date" name="date_installed" value="{{ rec.date_installed if rec else '' }}"></div>
+    </div>
+    <label>ประเภทงาน *</label>
+    <select name="install_type" required>
+      <option value="replacement" {{ 'selected' if rec and rec.install_type == 'replacement' else '' }}>เปลี่ยนของเก่าที่ชำรุด (ของเก่าต้องคืนคลัง)</option>
+      <option value="new" {{ 'selected' if rec and rec.install_type == 'new' else '' }}>ติดตั้งเพิ่มใหม่ (ไม่มีของเก่า ไม่ต้องคืน)</option>
+    </select>
+    <div class="form-row">
+      <div><label>ชื่อช่าง</label><input type="text" name="technician" value="{{ rec.technician if rec else '' }}"></div>
+      <div><label>พื้นที่ปฏิบัติงาน</label><input type="text" name="area" placeholder="เช่น MTB, Z2, FZ, SAT1" value="{{ rec.area if rec else '' }}"></div>
+    </div>
+    <label>หมายเหตุ</label>
+    <textarea name="note" rows="2" placeholder="เช่น เปลี่ยนหลอดไฟชำรุดที่ทางเดิน Z2">{{ rec.note if rec else '' }}</textarea>
+    <div style="margin-top:16px;">
+      <button class="btn" type="submit">{{ 'บันทึกการแก้ไข (ปรับยอดสต๊อกอัตโนมัติ)' if rec else 'บันทึก (ตัดสต๊อกห้องช่างทันที)' }}</button>
+      <a class="btn secondary" href="{{ url_for('installs_list') }}">ยกเลิก</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

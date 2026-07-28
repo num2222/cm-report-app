@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}รายงาน Stock Movement{% endblock %}
+{% block content %}
+<div class="card">
+  <h2>📊 รายงานการเคลื่อนไหวสต๊อก (สำหรับประกอบการขออนุมัติ PR)</h2>
+  <p class="muted">สรุปยอดโอนไปห้องช่าง / ติดตั้งไปแล้ว / คืนคลัง(Owner) / ส่วนต่างจากการนับสต๊อกล่าสุด ต่อรายการสินค้า</p>
+  {% if rows %}
+  <table class="wide-table">
+    <tr>
+      <th>สินค้า</th><th>สต๊อกกลาง</th><th>สต๊อกห้องช่าง</th>
+      <th>โอนไปห้องช่างสะสม</th><th>ติดตั้งไปสะสม</th>
+      <th>คืนคลัง(เปลี่ยนของเก่า)</th><th>ติดตั้งเพิ่มใหม่(ไม่มีคืน)</th>
+      <th>ส่วนต่างนับล่าสุด (กลาง)</th><th>ส่วนต่างนับล่าสุด (ห้องช่าง)</th>
+    </tr>
+    {% for r in rows %}
+    <tr>
+      <td>{{ r.item.name }}</td>
+      <td>{{ r.item.central_qty }} {{ r.item.unit }}</td>
+      <td>{{ r.item.tech_room_qty }} {{ r.item.unit }}</td>
+      <td>{{ r.total_transferred }}</td>
+      <td>{{ r.total_installed }}</td>
+      <td>{{ r.total_returned_owner }}</td>
+      <td>{{ r.total_new_install }}</td>
+      <td>
+        {% if r.central_last_variance is not none %}
+          <span style="color: {{ 'var(--red)' if r.central_last_variance < 0 else 'var(--green)' }};">{{ '%+g'|format(r.central_last_variance) }}</span>
+        {% else %}-{% endif %}
+      </td>
+      <td>
+        {% if r.tech_last_variance is not none %}
+          <span style="color: {{ 'var(--red)' if r.tech_last_variance < 0 else 'var(--green)' }};">{{ '%+g'|format(r.tech_last_variance) }}</span>
+        {% else %}-{% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <div class="empty">ยังไม่มีข้อมูล</div>
+  {% endif %}
+</div>
+{% endblock %}

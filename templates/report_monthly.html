@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% block title %}รายงานประจำเดือน{% endblock %}
+{% block content %}
+<div class="card">
+  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; flex-wrap:wrap; gap:10px;">
+    <h2 style="margin:0;">📅 รายงานสรุปประจำเดือน {{ month }}/{{ year }}</h2>
+    <form method="get" style="display:flex; gap:8px; align-items:center;">
+      <select name="month">
+        {% for m in range(1,13) %}
+        <option value="{{ m }}" {{ 'selected' if m == month else '' }}>{{ m }}</option>
+        {% endfor %}
+      </select>
+      <select name="year">
+        {% for y in range(year-2, year+1) %}
+        <option value="{{ y }}" {{ 'selected' if y == year else '' }}>{{ y }}</option>
+        {% endfor %}
+      </select>
+      <button class="btn small secondary" type="submit">ดูรายงาน</button>
+      <a class="btn small" href="{{ url_for('report_monthly_export', year=year, month=month) }}">📥 ส่งออก Excel (Template)</a>
+    </form>
+  </div>
+
+  <div class="grid" style="margin-bottom:20px;">
+    <div class="stat"><div class="num">{{ "%.0f"|format(total_central_value) }}</div><div class="label">มูลค่าสต๊อกกลางปัจจุบัน (บาท)</div></div>
+    <div class="stat"><div class="num">{{ total_installed_all }}</div><div class="label">อะไหล่ที่ใช้ไปเดือนนี้ (รวม)</div></div>
+    <div class="stat"><div class="num">{{ total_returned_all }}</div><div class="label">คืนคลัง(Owner) เดือนนี้</div></div>
+  </div>
+
+  <h3 style="font-size:15px;">สรุปสต๊อกสินค้ากลางประจำเดือน</h3>
+  {% if stock_rows %}
+  <table style="margin-bottom:24px;">
+    <tr><th>สินค้า</th><th>รับเข้าเดือนนี้ (PR)</th><th>โอนไปห้องช่างเดือนนี้</th><th>คงเหลือปัจจุบัน</th><th>ราคา/หน่วย</th><th>มูลค่าคงเหลือ</th></tr>
+    {% for r in stock_rows %}
+    <tr>
+      <td>{{ r.item.name }}</td>
+      <td>{{ r.received }}</td>
+      <td>{{ r.transferred }}</td>
+      <td>{{ r.current_central }} {{ r.item.unit }}</td>
+      <td>{{ "%.2f"|format(r.item.unit_price or 0) }}</td>
+      <td>{{ "%.2f"|format(r.value) }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <div class="empty" style="margin-bottom:24px;">ไม่มีข้อมูลสต๊อก</div>
+  {% endif %}
+
+  <h3 style="font-size:15px;">สรุปอะไหล่ที่ใช้ไป / คืนคลัง ประจำเดือนนี้</h3>
+  {% if usage_rows %}
+  <table>
+    <tr><th>สินค้า</th><th>ติดตั้งไปทั้งหมด</th><th>เปลี่ยนของเก่า (คืนคลัง)</th><th>ติดตั้งเพิ่มใหม่ (ไม่มีคืน)</th></tr>
+    {% for r in usage_rows %}
+    <tr>
+      <td>{{ r.item.name }}</td>
+      <td>{{ r.installed }} {{ r.item.unit }}</td>
+      <td>{{ r.returned }} {{ r.item.unit }}</td>
+      <td>{{ r.new_install }} {{ r.item.unit }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <div class="empty">ไม่มีรายการติดตั้งในเดือนนี้</div>
+  {% endif %}
+
+  <p class="muted" style="margin-top:16px;">
+    หมายเหตุ: "รับเข้าเดือนนี้" นับจาก PR ที่ได้รับของครบในเดือนนั้น (วันที่ได้รับครบ) — PR ที่ยังรับของไม่ครบจะยังไม่ถูกนับ
+  </p>
+</div>
+{% endblock %}

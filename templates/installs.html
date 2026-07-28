@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}ติดตั้ง/เปลี่ยนอะไหล่{% endblock %}
+{% block content %}
+<div class="card">
+  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; flex-wrap:wrap; gap:10px;">
+    <h2 style="margin:0;">🔧 รายการติดตั้ง/เปลี่ยนอะไหล่ (คืนคลัง)</h2>
+    <a class="btn" href="{{ url_for('install_new') }}">+ บันทึกการติดตั้ง</a>
+  </div>
+  <p class="muted">
+    กรอกจากที่เห็นในกลุ่ม LINE ว่าช่างเข้าไปติดตั้ง/เปลี่ยนอะไหล่แล้วกี่รายการ — ระบบจะตัดสต๊อกห้องช่างให้อัตโนมัติ<br>
+    ถ้าเป็นการ "เปลี่ยนของเก่า" ระบบจะนับเป็นอะไหล่ที่ต้องคืนคลัง (คืนให้ Owner) ถ้าเป็น "ติดตั้งเพิ่มใหม่" จะไม่มีการคืน
+  </p>
+  {% if installs %}
+  <table>
+    <tr><th>วันที่</th><th>สินค้า</th><th>จำนวน</th><th>ประเภท</th><th>ช่าง</th><th>พื้นที่</th><th>หมายเหตุ</th><th></th></tr>
+    {% for r in installs %}
+    <tr>
+      <td>{{ r.date_installed|thai_date }}</td>
+      <td>{{ r.item.name }}</td>
+      <td>{{ r.qty }} {{ r.item.unit }}</td>
+      <td>
+        {% if r.install_type == 'replacement' %}<span class="badge low">{{ r.type_label() }}</span>
+        {% else %}<span class="badge normal">{{ r.type_label() }}</span>{% endif %}
+      </td>
+      <td>{{ r.technician or '-' }}</td>
+      <td>{{ r.area or '-' }}</td>
+      <td>{{ r.note or '-' }}</td>
+      <td>
+        <a class="btn small secondary" href="{{ url_for('install_edit', rec_id=r.id) }}">แก้ไข</a>
+        <form class="inline" method="post" action="{{ url_for('install_delete', rec_id=r.id) }}" onsubmit="return confirm('ยืนยันลบ? ยอดสต๊อกห้องช่างจะถูกคืนกลับอัตโนมัติ');">
+          <button class="btn small danger" type="submit">ลบ</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <div class="empty">ยังไม่มีรายการติดตั้ง</div>
+  {% endif %}
+</div>
+{% endblock %}

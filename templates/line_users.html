@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% block title %}ผู้รับแจ้งเตือน LINE{% endblock %}
+{% block content %}
+
+<div class="card">
+  <h2>👥 กลุ่ม LINE ที่รับแจ้งเตือน (ใช้อันนี้เป็นหลัก)</h2>
+
+  {% if not line_configured %}
+  <div class="flash" style="background:#fef3c7; color:#92400e;">
+    ⚠️ ยังไม่ได้ตั้งค่า LINE_CHANNEL_ACCESS_TOKEN — ระบบจะยังส่งแจ้งเตือนไม่ได้จนกว่าจะตั้งค่าในไฟล์ <code>.env</code> (ดูวิธีใน README.md)
+  </div>
+  {% endif %}
+
+  <p class="muted">
+    วิธีเพิ่มกลุ่ม: เปิดสิทธิ์ "Allow bot to join group chats" ในหน้า Messaging API ของ Channel ก่อน แล้วเชิญบัญชี LINE OA เข้ากลุ่มไลน์ทีมที่มีผู้อนุมัติทุกคนอยู่แล้ว
+    ระบบจะจับ Group ID ให้อัตโนมัติ (จะยังไม่เปิดใช้งานทันที ต้องมากดเปิดใช้งานที่นี่ก่อน)
+  </p>
+
+  {% if groups %}
+  <table style="margin-bottom:10px;">
+    <tr><th>ชื่อกลุ่ม</th><th>วันที่ลงทะเบียน</th><th>เปิดใช้งานแจ้งเตือน</th><th></th></tr>
+    {% for g in groups %}
+    <tr>
+      <td>{{ g.name or g.line_group_id }}</td>
+      <td>{{ g.created_at.strftime('%Y-%m-%d %H:%M') if g.created_at else '-' }}</td>
+      <td><input type="checkbox" name="active" form="group-form-{{ g.id }}" {{ 'checked' if g.active else '' }}></td>
+      <td>
+        <button class="btn small" type="submit" form="group-form-{{ g.id }}">บันทึก</button>
+        <button class="btn small danger" type="submit" form="group-del-form-{{ g.id }}">ลบ</button>
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% for g in groups %}
+  <form id="group-form-{{ g.id }}" method="post" action="{{ url_for('notify_group_update', group_id=g.id) }}" style="display:none;"></form>
+  <form id="group-del-form-{{ g.id }}" method="post" action="{{ url_for('notify_group_delete', group_id=g.id) }}" style="display:none;" onsubmit="return confirm('ยืนยันลบ?');"></form>
+  {% endfor %}
+  {% else %}
+  <div class="empty">ยังไม่มีกลุ่มลงทะเบียน — เชิญบอทเข้ากลุ่มก่อน</div>
+  {% endif %}
+</div>
+
+<div class="card">
+  <h2>👤 ผู้ใช้ LINE ส่วนตัว (สำรอง — ใช้แจ้งผู้ขอเป็นการส่วนตัวตอน PR อนุมัติครบ)</h2>
+  <p class="muted">
+    ให้ผู้ขอซื้อ เพิ่มเพื่อน LINE OA แล้วพิมพ์ทักมา 1 ข้อความ ระบบจะจับชื่อกับ LINE ID ให้อัตโนมัติ จากนั้นไปผูกกับ PR ตอนสร้าง/แก้ไข
+  </p>
+  {% if users %}
+  <table>
+    <tr><th>ชื่อ LINE</th><th>วันที่ลงทะเบียน</th><th>สิทธิ์</th><th>ใช้งาน</th><th></th></tr>
+    {% for u in users %}
+    <tr>
+      <td>{{ u.display_name or u.line_user_id }}</td>
+      <td>{{ u.created_at.strftime('%Y-%m-%d %H:%M') if u.created_at else '-' }}</td>
+      <td>
+        <select name="role" form="user-form-{{ u.id }}">
+          <option value="unassigned" {{ 'selected' if u.role == 'unassigned' else '' }}>ยังไม่กำหนด</option>
+          <option value="approver" {{ 'selected' if u.role == 'approver' else '' }}>ผู้อนุมัติ</option>
+          <option value="requester" {{ 'selected' if u.role == 'requester' else '' }}>ผู้ขอซื้อ</option>
+          <option value="other" {{ 'selected' if u.role == 'other' else '' }}>อื่นๆ</option>
+        </select>
+      </td>
+      <td><input type="checkbox" name="active" form="user-form-{{ u.id }}" {{ 'checked' if u.active else '' }}></td>
+      <td>
+        <button class="btn small" type="submit" form="user-form-{{ u.id }}">บันทึก</button>
+        <button class="btn small danger" type="submit" form="user-del-form-{{ u.id }}">ลบ</button>
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% for u in users %}
+  <form id="user-form-{{ u.id }}" method="post" action="{{ url_for('line_user_update', user_id=u.id) }}" style="display:none;"></form>
+  <form id="user-del-form-{{ u.id }}" method="post" action="{{ url_for('line_user_delete', user_id=u.id) }}" style="display:none;" onsubmit="return confirm('ยืนยันลบ?');"></form>
+  {% endfor %}
+  {% else %}
+  <div class="empty">ยังไม่มีใครทักบอทเข้ามาเลย</div>
+  {% endif %}
+</div>
+{% endblock %}

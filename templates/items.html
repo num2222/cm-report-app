@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}สต๊อกสินค้า{% endblock %}
+{% block content %}
+<div class="card">
+  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; flex-wrap:wrap; gap:10px;">
+    <h2 style="margin:0;">📦 รายการสต๊อกสินค้า (กลาง + ห้องช่าง)</h2>
+    <a class="btn" href="{{ url_for('item_new') }}">+ เพิ่มสินค้า</a>
+  </div>
+  <form method="get" style="margin-bottom:14px;">
+    <input type="text" name="q" placeholder="ค้นหาชื่อสินค้า..." value="{{ q }}" style="max-width:300px; display:inline-block;">
+    <button class="btn secondary small" type="submit">ค้นหา</button>
+  </form>
+  {% if items %}
+  <table>
+    <tr>
+      <th>ลำดับ</th><th>ชื่อสินค้า</th><th>ประเภท</th><th>หมวดหมู่</th><th>ราคา/หน่วย</th>
+      <th>สต๊อกกลาง</th><th>สต๊อกห้องช่าง</th><th>จุดสั่งซื้อ</th><th>สถานะ</th><th></th>
+    </tr>
+    {% for i in items %}
+    <tr>
+      <td>{{ i.seq if i.seq is not none else '-' }}</td>
+      <td>{{ i.name }}</td>
+      <td>{% if i.is_aot() %}<span class="badge low">AOT</span>{% else %}<span class="badge normal">บริษัท</span>{% endif %}</td>
+      <td>{{ i.category or '-' }}</td>
+      <td>{{ "%.2f"|format(i.unit_price or 0) }}</td>
+      <td>{{ i.central_qty }} {{ i.unit }}</td>
+      <td>{{ i.tech_room_qty }} {{ i.unit }}</td>
+      <td>{{ i.reorder_point }}</td>
+      <td><span class="badge {{ 'out' if i.status()=='หมด' else ('low' if i.status()=='ใกล้หมด' else 'normal') }}">{{ i.status() }}</span></td>
+      <td>
+        <a class="btn small secondary" href="{{ url_for('item_edit', item_id=i.id) }}">แก้ไข</a>
+        <form class="inline" method="post" action="{{ url_for('item_delete', item_id=i.id) }}" onsubmit="return confirm('ยืนยันลบ?');">
+          <button class="btn small danger" type="submit">ลบ</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <div class="empty">ยังไม่มีรายการสินค้า</div>
+  {% endif %}
+</div>
+{% endblock %}
