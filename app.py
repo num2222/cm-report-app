@@ -157,6 +157,24 @@ def _kpi_export(c, key):
 
 STD_LABELS = {'A':'5-30 นาที','B':'1-3 ชม.','C':'3 ชม.-1 วัน','D':'1-7 วัน','E':'7-14 วัน','F':'1 เดือน'}
 
+# col N: เวลามาตรฐานในรูปแบบ ชม:นาที สำหรับ Excel
+STD_HOURS = {'A':'0:30','B':'3:00','C':'24:00','D':'168:00','E':'336:00','F':'720:00'}
+
+def fmt_response_decimal(raw):
+    """แปลงเวลาตอบรับเป็น decimal string: '15นาที' → '0.15', '20นาที' → '0.20'
+    ส่งกลับเป็น string เพื่อป้องกัน Excel แปลงเป็น time format อัตโนมัติ"""
+    if not raw: return ''
+    import re
+    cleaned = re.sub(r'นาท[ีิ]\.?|น\.?$', '', str(raw)).strip()
+    try:
+        val = float(cleaned)
+        if val >= 1 and val < 60:
+            # 15 → "0.15", 20 → "0.20" (string เพื่อกัน Excel time interpretation)
+            return f"0.{int(val):02d}"
+        return str(val)
+    except:
+        return raw
+
 def _trunc(val, max_len):
     """ตัดความยาวสตริงไม่ให้เกิน max_len — ป้องกัน DataError จาก backend
     แม้ frontend parse ผิดพลาด ระบบจะไม่ crash แต่จะตัดข้อมูลส่วนเกินทิ้ง"""
@@ -368,8 +386,8 @@ def _write_rows(ws, cases, start_row=8):
     # ── font หลักสำหรับข้อมูลทั่วไปทุก cell (TH SarabunPSK 12 เสมอ) ────────
     data_font     = Font(name='TH SarabunPSK', size=12)
     # ── font สำหรับ KPI result ✓/✗ (size 14 bold เพื่อให้เครื่องหมายชัด) ──
-    kpi_font      = Font(name='TH SarabunPSK', size=14, bold=True, color='1E7E4A')
-    kpi_font_fail = Font(name='TH SarabunPSK', size=14, bold=True, color='C0392B')
+    kpi_font      = Font(name='TH SarabunPSK', size=14, bold=True, color='000000')  # สีดำ
+    kpi_font_fail = Font(name='TH SarabunPSK', size=14, bold=True, color='000000')  # สีดำ
     center = Alignment(horizontal='center', vertical='center')
     wrap   = Alignment(wrap_text=True, vertical='center')
     left   = Alignment(vertical='center')
@@ -399,7 +417,7 @@ def _write_rows(ws, cases, start_row=8):
         set_cell(ws, r,  5, c.get('location',''),      align=wrap)
         set_cell(ws, r,  6, c.get('problem',''),       align=wrap)
         set_cell(ws, r,  7, c.get('kpiVal',''),        align=center)
-        set_cell(ws, r,  8, c.get('responseTime',''),  align=center)
+        set_cell(ws, r,  8, fmt_response_decimal(c.get('responseTime','')), align=center)
         set_cell(ws, r,  9, c.get('approveTime',''),   align=center)
         set_cell(ws, r, 10, c.get('arriveTime',''),    align=center)
 
@@ -413,7 +431,7 @@ def _write_rows(ws, cases, start_row=8):
 
         set_cell(ws, r, 12, c.get('solution',''),      align=wrap)
         set_cell(ws, r, 13, std,                       align=center)
-        set_cell(ws, r, 14, STD_LABELS.get(std,''),    align=center)
+        set_cell(ws, r, 14, STD_HOURS.get(std,''),     align=center)
         set_cell(ws, r, 15, c.get('closeTime',''),     align=center)
 
         # col Q = หมายเหตุ
@@ -499,8 +517,8 @@ def export_monthly():
     def write_month_rows(ws, cases):
         from openpyxl.styles import Font, Alignment
         data_font     = Font(name='TH SarabunPSK', size=12)
-        kpi_font_pass = Font(name='TH SarabunPSK', size=14, bold=True, color='1E7E4A')
-        kpi_font_fail = Font(name='TH SarabunPSK', size=14, bold=True, color='C0392B')
+        kpi_font_pass = Font(name='TH SarabunPSK', size=14, bold=True, color='000000')  # สีดำ
+        kpi_font_fail = Font(name='TH SarabunPSK', size=14, bold=True, color='000000')  # สีดำ
         center = Alignment(horizontal='center', vertical='center')
         wrap   = Alignment(wrap_text=True, vertical='center')
 
@@ -528,12 +546,12 @@ def export_monthly():
             set_cell(ws, r,  5, c.get('location',''),     align=wrap)
             set_cell(ws, r,  6, c.get('problem',''),      align=wrap)
             set_cell(ws, r,  7, c.get('kpiVal',''),       align=center)
-            set_cell(ws, r,  8, c.get('responseTime',''), align=center)
+            set_cell(ws, r,  8, fmt_response_decimal(c.get('responseTime','')), align=center)
             set_cell(ws, r,  9, c.get('approveTime',''),  align=center)
             set_cell(ws, r, 10, c.get('arriveTime',''),   align=center)
             set_cell(ws, r, 12, c.get('solution',''),     align=wrap)
             set_cell(ws, r, 13, std,                      align=center)
-            set_cell(ws, r, 14, STD_LABELS.get(std,''))
+            set_cell(ws, r, 14, STD_HOURS.get(std,''),    align=center)
             set_cell(ws, r, 15, c.get('closeTime',''),    align=center)
             if is_cancelled:
                 clear_kpi_cell(ws, r, 11)
