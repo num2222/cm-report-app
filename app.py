@@ -157,6 +157,20 @@ def _kpi_export(c, key):
 
 STD_LABELS = {'A':'5-30 นาที','B':'1-3 ชม.','C':'3 ชม.-1 วัน','D':'1-7 วัน','E':'7-14 วัน','F':'1 เดือน'}
 
+# Thai Buddhist Era date format (สำหรับ Excel แสดงวันที่แบบไทย เช่น 27 กรกฎาคม 2569)
+THAI_DATE_NUMFMT = '[$-107041E]d\\ mmmm\\ yyyy;@'
+
+def to_thai_date(iso_str):
+    """แปลง YYYY-MM-DD → datetime object (ค.ศ.) เพื่อให้ Excel แสดงเป็นวันที่ไทย
+    ต้องตั้ง number_format = THAI_DATE_NUMFMT ที่ cell ด้วย"""
+    if not iso_str: return None
+    try:
+        from datetime import date as _date
+        parts = iso_str.split('-')
+        return _date(int(parts[0]), int(parts[1]), int(parts[2]))
+    except Exception:
+        return None
+
 # col N: เวลามาตรฐานในรูปแบบ ชม:นาที สำหรับ Excel
 STD_HOURS = {'A':'0:30','B':'3:00','C':'24:00','D':'168:00','E':'336:00','F':'720:00'}
 
@@ -386,8 +400,8 @@ def _write_rows(ws, cases, start_row=8):
     # ── font หลักสำหรับข้อมูลทั่วไปทุก cell (TH SarabunPSK 12 เสมอ) ────────
     data_font     = Font(name='TH SarabunPSK', size=12)
     # ── font สำหรับ KPI result ✓/✗ (size 14 bold เพื่อให้เครื่องหมายชัด) ──
-    kpi_font      = Font(name='TH SarabunPSK', size=14, bold=True, color='000000')  # สีดำ
-    kpi_font_fail = Font(name='TH SarabunPSK', size=14, bold=True, color='000000')  # สีดำ
+    kpi_font      = Font(name='TH SarabunPSK', size=10, bold=False, color='000000')  # สีดำ บาง
+    kpi_font_fail = Font(name='TH SarabunPSK', size=10, bold=False, color='000000')  # สีดำ บาง
     center = Alignment(horizontal='center', vertical='center')
     wrap   = Alignment(wrap_text=True, vertical='center')
     left   = Alignment(vertical='center')
@@ -466,14 +480,19 @@ def export_daily():
         cases = sorted([c for c in cases_all if c.get('area')==area], key=lambda c: _seq_num(c))
         area_cases[area] = cases
         done  = [c for c in cases if c.get('closeTime')]
-        ws.cell(row=4,column=6).value  = date_be
+        # วันที่แสดงเป็นไทย "27 กรกฎาคม 2569" โดยใช้ datetime + numfmt
+        _dt_cell = ws.cell(row=4,column=6)
+        _dt_cell.value = to_thai_date(date_iso)
+        _dt_cell.number_format = THAI_DATE_NUMFMT
         ws.cell(row=4,column=11).value = len(done)
         ws.cell(row=4,column=16).value = len(cases)-len(done)
         _write_rows(ws, cases, start_row=8)
     ws_cm = wb['Daily CM']
     all_c = [c for a in areas for c in area_cases[a]]
     all_d = [c for c in all_c if c.get('closeTime')]
-    ws_cm.cell(row=7,column=5).value  = date_be
+    _cm_dt = ws_cm.cell(row=7,column=5)
+    _cm_dt.value = to_thai_date(date_iso)
+    _cm_dt.number_format = THAI_DATE_NUMFMT
     ws_cm.cell(row=13,column=8).value = len(all_c)
     ws_cm.cell(row=14,column=8).value = len(all_d)
     ws_cm.cell(row=15,column=8).value = len(all_c)-len(all_d)
@@ -517,8 +536,8 @@ def export_monthly():
     def write_month_rows(ws, cases):
         from openpyxl.styles import Font, Alignment
         data_font     = Font(name='TH SarabunPSK', size=12)
-        kpi_font_pass = Font(name='TH SarabunPSK', size=14, bold=True, color='000000')  # สีดำ
-        kpi_font_fail = Font(name='TH SarabunPSK', size=14, bold=True, color='000000')  # สีดำ
+        kpi_font_pass = Font(name='TH SarabunPSK', size=10, bold=False, color='000000')  # สีดำ บาง
+        kpi_font_fail = Font(name='TH SarabunPSK', size=10, bold=False, color='000000')  # สีดำ บาง
         center = Alignment(horizontal='center', vertical='center')
         wrap   = Alignment(wrap_text=True, vertical='center')
 
