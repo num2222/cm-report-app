@@ -461,6 +461,38 @@ def _write_rows(ws, cases, start_row=8):
             if close_date and close_date != c.get('date',''):
                 set_cell(ws, r, 17, f'ปิดงานวันที่ {fmt_be(close_date)}')
 
+
+def _add_logo_to_wb(wb, tmpl_bytes):
+    """สกัด Logo จาก template แล้ว re-insert ลงทุก sheet
+    เพราะ openpyxl ไม่ preserve images เมื่อ load แล้ว save ใหม่"""
+    from openpyxl import load_workbook
+    from openpyxl.drawing.image import Image as XLImage
+    try:
+        wb_src = load_workbook(io.BytesIO(tmpl_bytes))
+        # หา logo จาก sheet แรกที่มี image
+        logo_bytes = None
+        logo_w, logo_h = 520, 160  # default size
+        for sn in wb_src.sheetnames:
+            imgs = wb_src[sn]._images
+            if imgs:
+                logo_bytes = imgs[0]._data()
+                logo_w = imgs[0].width or logo_w
+                logo_h = imgs[0].height or logo_h
+                break
+        if not logo_bytes:
+            return  # ไม่มี logo ใน template
+        # Insert logo ลงทุก sheet
+        for sn in wb.sheetnames:
+            ws = wb[sn]
+            ws._images = []  # clear broken references
+            img = XLImage(io.BytesIO(logo_bytes))
+            img.anchor = 'A1'
+            img.width  = logo_w
+            img.height = logo_h
+            ws.add_image(img)
+    except Exception as e:
+        app.logger.warning(f"Logo insert failed: {e}")
+
 @app.route('/api/export/daily', methods=['POST'])
 @login_required
 def export_daily():
@@ -513,6 +545,7 @@ def export_daily():
     ws_cm.cell(row=40,column=4).value=k1f   # D40 KPI1 ไม่ผ่าน
     ws_cm.cell(row=38,column=10).value=k2p  # J38 KPI2 ผ่าน
     ws_cm.cell(row=40,column=10).value=k2f  # J40 KPI2 ไม่ผ่าน
+    _add_logo_to_wb(wb, tmpl.read_bytes())
     out = io.BytesIO(); wb.save(out); out.seek(0)
     return send_file(out, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
                      as_attachment=True, download_name=f'CM_Daily_{date_iso}.xlsx')
@@ -622,6 +655,7 @@ def export_monthly():
     ws_mc.cell(row=41,column=7).value=k2f;   ws_mc.cell(row=41,column=9).value=round(k2f/k2t*100,1)   # G41, I41
     ws_mc.cell(row=39,column=12).value=k3p;  ws_mc.cell(row=39,column=14).value=round(k3p/k3t*100,1)  # L39, N39
     ws_mc.cell(row=41,column=12).value=k3f;  ws_mc.cell(row=41,column=14).value=round(k3f/k3t*100,1)  # L41, N41
+    _add_logo_to_wb(wb, tmpl.read_bytes())
     out = io.BytesIO(); wb.save(out); out.seek(0)
     return send_file(out, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
                      as_attachment=True, download_name=f'CM_Monthly_{month}.xlsx')
