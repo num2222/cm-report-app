@@ -463,86 +463,74 @@ def _write_rows(ws, cases, start_row=8):
 
 
 def _save_with_logo(wb, tmpl_bytes):
-    """Save workbook พร้อม Logo โดย:
-    1. Save wb ปกติ (ไม่มี Logo)
-    2. Merge: เอา template เป็น base แล้ว overwrite ด้วย sheet data ใหม่
-    วิธีนี้รักษา media/drawings/Logo จาก template ไว้ครบ"""
-    import zipfile
+    """Save workbook พร้อม Logo
+    วิธี: ใช้ template เป็น base zip แล้ว overwrite เฉพาะ sheet data XML
+    รักษา: drawings, media, sheet rels, comments จาก template ครบ
+    แก้ไข: externalLinks, absolute paths, PNG content type"""
+    import zipfile, re
 
-    # Save wb ก่อน (ได้ sheet XML ที่มีข้อมูลแต่ไม่มี Logo)
+    # 1. Save wb → ได้ sheet XML ใหม่ที่มีข้อมูล
     wb_buf = io.BytesIO()
     wb.save(wb_buf)
     wb_bytes = wb_buf.getvalue()
 
-    # ไฟล์ที่จะ overwrite จาก wb ใหม่ (ข้อมูล+styles)
-    # ยกเว้น: media, drawings, sheet rels, comments — เพราะต้องใช้จาก template
-    # template เก็บ comments ที่ xl/comments*.xml แต่ openpyxl เก็บที่ xl/comments/comment*.xml
-    # ถ้าใช้ path จาก openpyxl จะ conflict กับ sheet rels ของ template
-    KEEP_FROM_TMPL = {'xl/media/', 'xl/drawings/', 'xl/worksheets/_rels/', 'xl/comments'}
-    wb_data = {}
+    # 2. เก็บไฟล์ที่เปลี่ยนแปลงจาก wb ใหม่
+    #    - sheet XMLs (ข้อมูลเคส)
+    #    - styles.xml และ sharedStrings.xml (เพราะ sheet XML reference style/string index ของ wb ใหม่)
+    #    ทุกอย่างอื่น: media, drawings, sheet rels, comments → ใช้จาก template
+    TAKE_FROM_NEW = {'xl/styles.xml', 'xl/sharedStrings.xml',
+                     'xl/theme/theme1.xml', 'docProps/app.xml', 'docProps/core.xml',
+                     '[Content_Types].xml', 'xl/workbook.xml', 'xl/_rels/workbook.xml.rels'}
+    new_sheets = {}
     with zipfile.ZipFile(io.BytesIO(wb_bytes), 'r') as zf:
         for fname in zf.namelist():
-            if not any(fname.startswith(prefix) for prefix in KEEP_FROM_TMPL):
-                wb_data[fname] = zf.read(fname)
+            if (fname.startswith('xl/worksheets/sheet') and fname.endswith('.xml'))                or fname in TAKE_FROM_NEW:
+                new_sheets[fname] = zf.read(fname)
 
-    # Merge: template เป็น base + overwrite ด้วย wb_data
+    # 3. Merge: template เป็น base, แทนที่เฉพาะ sheet XMLs
     out_buf = io.BytesIO()
-    # ไฟล์ที่ต้องลบออก: externalLinks (ชี้ไป OneDrive) และ calcChain (อาจ conflict)
-    SKIP_FILES = {'xl/calcChain.xml'}
-
-    # XML files ที่ต้องแก้ไขเพื่อลบ externalLink และเพิ่ม PNG content type
-    import re as _re
-
-    def clean_xml(fname, data):
-        """แก้ไข XML files เฉพาะที่จำเป็น ไม่แตะ binary files"""
-        XML_FILES = {'xl/workbook.xml', 'xl/_rels/workbook.xml.rels', '[Content_Types].xml'}
-        if fname not in XML_FILES:
-            return data  # binary files คืนตรงๆ
-
-        try:
-            text = data.decode('utf-8')
-        except UnicodeDecodeError:
-            return data
-
-        if fname == 'xl/workbook.xml':
-            # ลบ <externalReferences> block ออก
-            text = _re.sub(r'<externalReferences[^>]*>.*?</externalReferences>', '', text, flags=_re.DOTALL)
-
-        elif fname == 'xl/_rels/workbook.xml.rels':
-            # ลบ Relationship ที่เป็น externalLink
-            text = _re.sub(r'<Relationship[^>]*/>', lambda m: '' if 'externalLink' in m.group() else m.group(), text)
-            # แปลง absolute path "/xl/foo" → relative path "foo"
-            # openpyxl ใช้ /xl/... แต่ Excel ต้องการ relative path เหมือน template
-            text = _re.sub(r'Target="/xl/([^"]+)"', r'Target="\1"', text)
-
-        elif fname == '[Content_Types].xml':
-            # 1. ลบ Override สำหรับ externalLink ออก
-            text = _re.sub(r'<Override[^>]*externalLink[^>]*/>', '', text)
-            # 2. เพิ่ม <Default Extension="png"> ถ้ายังไม่มี (ให้ Excel รู้ว่า .png เป็น image)
-            if 'Extension="png"' not in text:
-                text = text.replace(
-                    '<Default Extension="vml"',
-                    '<Default Extension="png" ContentType="image/png" /><Default Extension="vml"'
-                )
-
-        return text.encode('utf-8')
-
     try:
         with zipfile.ZipFile(io.BytesIO(tmpl_bytes), 'r') as src_zf:
+            tmpl_names = set(src_zf.namelist())
             with zipfile.ZipFile(out_buf, 'w', zipfile.ZIP_DEFLATED) as out_zf:
-                copied = set()
                 for item in src_zf.infolist():
                     fname = item.filename
-                    if fname in SKIP_FILES or fname.startswith('xl/externalLinks'):
+
+                    # ข้าม externalLinks
+                    if fname.startswith('xl/externalLinks') or fname == 'xl/calcChain.xml':
                         continue
-                    if fname in wb_data:
-                        out_zf.writestr(fname, clean_xml(fname, wb_data[fname]))
-                    else:
-                        out_zf.writestr(item, clean_xml(fname, src_zf.read(fname)))
-                    copied.add(fname)
-                for fname, data in wb_data.items():
-                    if fname not in copied and fname not in SKIP_FILES and not fname.startswith('xl/externalLinks'):
-                        out_zf.writestr(fname, clean_xml(fname, data))
+
+                    raw = src_zf.read(fname)
+
+                    # แทนที่ sheet XML ด้วยข้อมูลใหม่
+                    if fname in new_sheets:
+                        raw = new_sheets[fname]
+
+                    # แก้ทุก XML ที่มีปัญหา (ทั้ง template และ new_sheets)
+                    fname_str = fname
+                    if fname_str.endswith('.xml') or fname_str.endswith('.rels'):
+                        text_raw = raw.decode('utf-8', errors='replace')
+                        changed = False
+                        if fname_str == '[Content_Types].xml':
+                            t2 = re.sub(r'<Override[^>]*externalLink[^>]*/>', '', text_raw)
+                            if 'Extension="png"' not in t2:
+                                t2 = t2.replace('<Default Extension="vml"',
+                                    '<Default Extension="png" ContentType="image/png" />'
+                                    '<Default Extension="vml"')
+                            if t2 != text_raw: raw = t2.encode('utf-8')
+                        elif fname_str == 'xl/_rels/workbook.xml.rels':
+                            t2 = re.sub(r'<Relationship[^>]*/>', 
+                                lambda m: '' if 'externalLink' in m.group() else m.group(), text_raw)
+                            # แปลง absolute /xl/... → relative
+                            t2 = re.sub(r'Target="/xl/([^"]+)"', lambda m: 'Target="' + m.group(1) + '"', t2)
+                            if t2 != text_raw: raw = t2.encode('utf-8')
+                        elif fname_str == 'xl/workbook.xml':
+                            t2 = re.sub(r'<externalReferences[^>]*>.*?</externalReferences>',
+                                '', text_raw, flags=re.DOTALL)
+                            if t2 != text_raw: raw = t2.encode('utf-8')
+
+                    out_zf.writestr(item, raw)
+
         out_buf.seek(0)
         return out_buf
     except Exception as e:
