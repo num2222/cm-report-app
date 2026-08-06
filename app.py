@@ -464,31 +464,25 @@ def _write_rows(ws, cases, start_row=8):
 
 def _add_logo_to_wb(wb, tmpl_bytes):
     """สกัด Logo จาก template แล้ว re-insert ลงทุก sheet
-    เพราะ openpyxl ไม่ preserve images เมื่อ load แล้ว save ใหม่"""
-    from openpyxl import load_workbook
+    ใช้ zipfile อ่านโดยตรงจาก xl/media/ เพราะ openpyxl._data() อาจ fail เงียบๆ"""
+    import zipfile
     from openpyxl.drawing.image import Image as XLImage
     try:
-        wb_src = load_workbook(io.BytesIO(tmpl_bytes))
-        # หา logo จาก sheet แรกที่มี image
         logo_bytes = None
-        logo_w, logo_h = 520, 160  # default size
-        for sn in wb_src.sheetnames:
-            imgs = wb_src[sn]._images
-            if imgs:
-                logo_bytes = imgs[0]._data()
-                logo_w = imgs[0].width or logo_w
-                logo_h = imgs[0].height or logo_h
-                break
-        if not logo_bytes:
-            return  # ไม่มี logo ใน template
-        # Insert logo ลงทุก sheet
+        with zipfile.ZipFile(io.BytesIO(tmpl_bytes), 'r') as zf:
+            media = sorted([n for n in zf.namelist() if n.startswith('xl/media/')])
+            if not media:
+                app.logger.warning("No media files in template — logo skipped")
+                return
+            logo_bytes = zf.read(media[0])
+            app.logger.info(f"Logo extracted via zipfile: {media[0]} ({len(logo_bytes)} bytes)")
         for sn in wb.sheetnames:
             ws = wb[sn]
-            ws._images = []  # clear broken references
+            ws._images = []
             img = XLImage(io.BytesIO(logo_bytes))
             img.anchor = 'A1'
-            img.width  = logo_w
-            img.height = logo_h
+            img.width  = 520
+            img.height = 160
             ws.add_image(img)
     except Exception as e:
         app.logger.warning(f"Logo insert failed: {e}")
