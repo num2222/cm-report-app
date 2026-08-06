@@ -511,6 +511,9 @@ def _save_with_logo(wb, tmpl_bytes):
         elif fname == 'xl/_rels/workbook.xml.rels':
             # ลบ Relationship ที่เป็น externalLink
             text = _re.sub(r'<Relationship[^>]*/>', lambda m: '' if 'externalLink' in m.group() else m.group(), text)
+            # แปลง absolute path "/xl/foo" → relative path "foo"
+            # openpyxl ใช้ /xl/... แต่ Excel ต้องการ relative path เหมือน template
+            text = _re.sub(r'Target="/xl/([^"]+)"', r'Target="\1"', text)
 
         elif fname == '[Content_Types].xml':
             # 1. ลบ Override สำหรับ externalLink ออก
