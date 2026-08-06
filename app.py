@@ -486,23 +486,38 @@ def _save_with_logo(wb, tmpl_bytes):
     # ไฟล์ที่ต้องลบออก: externalLinks (ชี้ไป OneDrive) และ calcChain (อาจ conflict)
     SKIP_FILES = {'xl/calcChain.xml'}
 
-    # XML files ที่ต้องลบ externalLink reference ออก
-    XML_CLEAN = {'xl/workbook.xml', 'xl/_rels/workbook.xml.rels'}
+    # XML files ที่ต้องแก้ไขเพื่อลบ externalLink และเพิ่ม PNG content type
+    import re as _re
 
     def clean_xml(fname, data):
-        """ลบ reference ของ externalLinks เฉพาะจาก XML files เท่านั้น
-        ไม่แตะ binary files เช่น images, printer settings"""
-        if fname not in XML_CLEAN:
-            return data  # คืน bytes ตรงๆ สำหรับ binary files
-        import re
+        """แก้ไข XML files เฉพาะที่จำเป็น ไม่แตะ binary files"""
+        XML_FILES = {'xl/workbook.xml', 'xl/_rels/workbook.xml.rels', '[Content_Types].xml'}
+        if fname not in XML_FILES:
+            return data  # binary files คืนตรงๆ
+
         try:
             text = data.decode('utf-8')
         except UnicodeDecodeError:
             return data
+
         if fname == 'xl/workbook.xml':
-            text = re.sub(r'<externalReferences[^>]*>.*?</externalReferences>', '', text, flags=re.DOTALL)
+            # ลบ <externalReferences> block ออก
+            text = _re.sub(r'<externalReferences[^>]*>.*?</externalReferences>', '', text, flags=_re.DOTALL)
+
         elif fname == 'xl/_rels/workbook.xml.rels':
-            text = re.sub(r'<Relationship[^>]*/>', lambda m: '' if 'externalLink' in m.group() else m.group(), text)
+            # ลบ Relationship ที่เป็น externalLink
+            text = _re.sub(r'<Relationship[^>]*/>', lambda m: '' if 'externalLink' in m.group() else m.group(), text)
+
+        elif fname == '[Content_Types].xml':
+            # 1. ลบ Override สำหรับ externalLink ออก
+            text = _re.sub(r'<Override[^>]*externalLink[^>]*/>', '', text)
+            # 2. เพิ่ม <Default Extension="png"> ถ้ายังไม่มี (ให้ Excel รู้ว่า .png เป็น image)
+            if 'Extension="png"' not in text:
+                text = text.replace(
+                    '<Default Extension="vml"',
+                    '<Default Extension="png" ContentType="image/png" /><Default Extension="vml"'
+                )
+
         return text.encode('utf-8')
 
     try:
