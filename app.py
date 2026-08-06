@@ -475,8 +475,10 @@ def _save_with_logo(wb, tmpl_bytes):
     wb_bytes = wb_buf.getvalue()
 
     # ไฟล์ที่จะ overwrite จาก wb ใหม่ (ข้อมูล+styles)
-    # ยกเว้น: media, drawings, sheet rels — เพราะต้องใช้จาก template เพื่อให้ Logo แสดง
-    KEEP_FROM_TMPL = {'xl/media/', 'xl/drawings/', 'xl/worksheets/_rels/'}
+    # ยกเว้น: media, drawings, sheet rels, comments — เพราะต้องใช้จาก template
+    # template เก็บ comments ที่ xl/comments*.xml แต่ openpyxl เก็บที่ xl/comments/comment*.xml
+    # ถ้าใช้ path จาก openpyxl จะ conflict กับ sheet rels ของ template
+    KEEP_FROM_TMPL = {'xl/media/', 'xl/drawings/', 'xl/worksheets/_rels/', 'xl/comments'}
     wb_data = {}
     with zipfile.ZipFile(io.BytesIO(wb_bytes), 'r') as zf:
         for fname in zf.namelist():
