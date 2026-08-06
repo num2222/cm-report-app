@@ -483,20 +483,44 @@ def _save_with_logo(wb, tmpl_bytes):
 
     # Merge: template เป็น base + overwrite ด้วย wb_data
     out_buf = io.BytesIO()
+    # ไฟล์ที่ต้องลบออก: externalLinks (ชี้ไป OneDrive) และ calcChain (อาจ conflict)
+    SKIP_FILES = {'xl/calcChain.xml'}
+
+    # XML files ที่ต้องลบ externalLink reference ออก
+    XML_CLEAN = {'xl/workbook.xml', 'xl/_rels/workbook.xml.rels'}
+
+    def clean_xml(fname, data):
+        """ลบ reference ของ externalLinks เฉพาะจาก XML files เท่านั้น
+        ไม่แตะ binary files เช่น images, printer settings"""
+        if fname not in XML_CLEAN:
+            return data  # คืน bytes ตรงๆ สำหรับ binary files
+        import re
+        try:
+            text = data.decode('utf-8')
+        except UnicodeDecodeError:
+            return data
+        if fname == 'xl/workbook.xml':
+            text = re.sub(r'<externalReferences[^>]*>.*?</externalReferences>', '', text, flags=re.DOTALL)
+        elif fname == 'xl/_rels/workbook.xml.rels':
+            text = re.sub(r'<Relationship[^>]*/>', lambda m: '' if 'externalLink' in m.group() else m.group(), text)
+        return text.encode('utf-8')
+
     try:
         with zipfile.ZipFile(io.BytesIO(tmpl_bytes), 'r') as src_zf:
             with zipfile.ZipFile(out_buf, 'w', zipfile.ZIP_DEFLATED) as out_zf:
                 copied = set()
                 for item in src_zf.infolist():
                     fname = item.filename
+                    if fname in SKIP_FILES or fname.startswith('xl/externalLinks'):
+                        continue
                     if fname in wb_data:
-                        out_zf.writestr(fname, wb_data[fname])
+                        out_zf.writestr(fname, clean_xml(fname, wb_data[fname]))
                     else:
-                        out_zf.writestr(item, src_zf.read(fname))
+                        out_zf.writestr(item, clean_xml(fname, src_zf.read(fname)))
                     copied.add(fname)
                 for fname, data in wb_data.items():
-                    if fname not in copied:
-                        out_zf.writestr(fname, data)
+                    if fname not in copied and fname not in SKIP_FILES and not fname.startswith('xl/externalLinks'):
+                        out_zf.writestr(fname, clean_xml(fname, data))
         out_buf.seek(0)
         return out_buf
     except Exception as e:
