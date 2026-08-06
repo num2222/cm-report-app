@@ -462,81 +462,30 @@ def _write_rows(ws, cases, start_row=8):
                 set_cell(ws, r, 17, f'ปิดงานวันที่ {fmt_be(close_date)}')
 
 
-def _save_with_logo(wb, tmpl_bytes):
-    """Save workbook พร้อม Logo
-    วิธี: ใช้ template เป็น base zip แล้ว overwrite เฉพาะ sheet data XML
-    รักษา: drawings, media, sheet rels, comments จาก template ครบ
-    แก้ไข: externalLinks, absolute paths, PNG content type"""
-    import zipfile, re
-
-    # 1. Save wb → ได้ sheet XML ใหม่ที่มีข้อมูล
-    wb_buf = io.BytesIO()
-    wb.save(wb_buf)
-    wb_bytes = wb_buf.getvalue()
-
-    # 2. เก็บไฟล์ที่เปลี่ยนแปลงจาก wb ใหม่
-    #    - sheet XMLs (ข้อมูลเคส)
-    #    - styles.xml และ sharedStrings.xml (เพราะ sheet XML reference style/string index ของ wb ใหม่)
-    #    ทุกอย่างอื่น: media, drawings, sheet rels, comments → ใช้จาก template
-    TAKE_FROM_NEW = {'xl/styles.xml', 'xl/sharedStrings.xml',
-                     'xl/theme/theme1.xml', 'docProps/app.xml', 'docProps/core.xml',
-                     '[Content_Types].xml', 'xl/workbook.xml', 'xl/_rels/workbook.xml.rels'}
-    new_sheets = {}
-    with zipfile.ZipFile(io.BytesIO(wb_bytes), 'r') as zf:
-        for fname in zf.namelist():
-            if (fname.startswith('xl/worksheets/sheet') and fname.endswith('.xml'))                or fname in TAKE_FROM_NEW:
-                new_sheets[fname] = zf.read(fname)
-
-    # 3. Merge: template เป็น base, แทนที่เฉพาะ sheet XMLs
-    out_buf = io.BytesIO()
+def _add_logo_to_wb(wb, tmpl_bytes):
+    """สกัด Logo จาก template แล้ว re-insert ลงทุก sheet
+    ใช้ zipfile อ่านโดยตรงจาก xl/media/ เพราะ openpyxl._data() อาจ fail เงียบๆ"""
+    import zipfile
+    from openpyxl.drawing.image import Image as XLImage
     try:
-        with zipfile.ZipFile(io.BytesIO(tmpl_bytes), 'r') as src_zf:
-            tmpl_names = set(src_zf.namelist())
-            with zipfile.ZipFile(out_buf, 'w', zipfile.ZIP_DEFLATED) as out_zf:
-                for item in src_zf.infolist():
-                    fname = item.filename
-
-                    # ข้าม externalLinks
-                    if fname.startswith('xl/externalLinks') or fname == 'xl/calcChain.xml':
-                        continue
-
-                    raw = src_zf.read(fname)
-
-                    # แทนที่ sheet XML ด้วยข้อมูลใหม่
-                    if fname in new_sheets:
-                        raw = new_sheets[fname]
-
-                    # แก้ทุก XML ที่มีปัญหา (ทั้ง template และ new_sheets)
-                    fname_str = fname
-                    if fname_str.endswith('.xml') or fname_str.endswith('.rels'):
-                        text_raw = raw.decode('utf-8', errors='replace')
-                        changed = False
-                        if fname_str == '[Content_Types].xml':
-                            t2 = re.sub(r'<Override[^>]*externalLink[^>]*/>', '', text_raw)
-                            if 'Extension="png"' not in t2:
-                                t2 = t2.replace('<Default Extension="vml"',
-                                    '<Default Extension="png" ContentType="image/png" />'
-                                    '<Default Extension="vml"')
-                            if t2 != text_raw: raw = t2.encode('utf-8')
-                        elif fname_str == 'xl/_rels/workbook.xml.rels':
-                            t2 = re.sub(r'<Relationship[^>]*/>', 
-                                lambda m: '' if 'externalLink' in m.group() else m.group(), text_raw)
-                            # แปลง absolute /xl/... → relative
-                            t2 = re.sub(r'Target="/xl/([^"]+)"', lambda m: 'Target="' + m.group(1) + '"', t2)
-                            if t2 != text_raw: raw = t2.encode('utf-8')
-                        elif fname_str == 'xl/workbook.xml':
-                            t2 = re.sub(r'<externalReferences[^>]*>.*?</externalReferences>',
-                                '', text_raw, flags=re.DOTALL)
-                            if t2 != text_raw: raw = t2.encode('utf-8')
-
-                    out_zf.writestr(item, raw)
-
-        out_buf.seek(0)
-        return out_buf
+        logo_bytes = None
+        with zipfile.ZipFile(io.BytesIO(tmpl_bytes), 'r') as zf:
+            media = sorted([n for n in zf.namelist() if n.startswith('xl/media/')])
+            if not media:
+                app.logger.warning("No media files in template — logo skipped")
+                return
+            logo_bytes = zf.read(media[0])
+            app.logger.info(f"Logo extracted via zipfile: {media[0]} ({len(logo_bytes)} bytes)")
+        for sn in wb.sheetnames:
+            ws = wb[sn]
+            ws._images = []
+            img = XLImage(io.BytesIO(logo_bytes))
+            img.anchor = 'A1'
+            img.width  = 520
+            img.height = 160
+            ws.add_image(img)
     except Exception as e:
-        app.logger.warning(f"Logo merge failed: {e} — falling back to no-logo export")
-        wb_buf.seek(0)
-        return wb_buf
+        app.logger.warning(f"Logo insert failed: {e}")
 
 @app.route('/api/export/daily', methods=['POST'])
 @login_required
@@ -590,7 +539,8 @@ def export_daily():
     ws_cm.cell(row=40,column=4).value=k1f   # D40 KPI1 ไม่ผ่าน
     ws_cm.cell(row=38,column=10).value=k2p  # J38 KPI2 ผ่าน
     ws_cm.cell(row=40,column=10).value=k2f  # J40 KPI2 ไม่ผ่าน
-    out = _save_with_logo(wb, tmpl.read_bytes())
+    _add_logo_to_wb(wb, tmpl.read_bytes())
+    out = io.BytesIO(); wb.save(out); out.seek(0)
     return send_file(out, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
                      as_attachment=True, download_name=f'CM_Daily_{date_iso}.xlsx')
 
@@ -699,7 +649,8 @@ def export_monthly():
     ws_mc.cell(row=41,column=7).value=k2f;   ws_mc.cell(row=41,column=9).value=round(k2f/k2t*100,1)   # G41, I41
     ws_mc.cell(row=39,column=12).value=k3p;  ws_mc.cell(row=39,column=14).value=round(k3p/k3t*100,1)  # L39, N39
     ws_mc.cell(row=41,column=12).value=k3f;  ws_mc.cell(row=41,column=14).value=round(k3f/k3t*100,1)  # L41, N41
-    out = _save_with_logo(wb, tmpl.read_bytes())
+    _add_logo_to_wb(wb, tmpl.read_bytes())
+    out = io.BytesIO(); wb.save(out); out.seek(0)
     return send_file(out, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
                      as_attachment=True, download_name=f'CM_Monthly_{month}.xlsx')
 
