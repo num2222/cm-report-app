@@ -462,30 +462,47 @@ def _write_rows(ws, cases, start_row=8):
                 set_cell(ws, r, 17, f'ปิดงานวันที่ {fmt_be(close_date)}')
 
 
-def _add_logo_to_wb(wb, tmpl_bytes):
-    """สกัด Logo จาก template แล้ว re-insert ลงทุก sheet
-    ใช้ zipfile อ่านโดยตรงจาก xl/media/ เพราะ openpyxl._data() อาจ fail เงียบๆ"""
+def _save_with_logo(wb, tmpl_bytes):
+    """Save workbook พร้อม Logo โดย:
+    1. Save wb ปกติ (ไม่มี Logo)
+    2. Merge: เอา template เป็น base แล้ว overwrite ด้วย sheet data ใหม่
+    วิธีนี้รักษา media/drawings/Logo จาก template ไว้ครบ"""
     import zipfile
-    from openpyxl.drawing.image import Image as XLImage
+
+    # Save wb ก่อน (ได้ sheet XML ที่มีข้อมูลแต่ไม่มี Logo)
+    wb_buf = io.BytesIO()
+    wb.save(wb_buf)
+    wb_bytes = wb_buf.getvalue()
+
+    # ไฟล์ที่จะ overwrite จาก wb ใหม่ (ข้อมูล+styles ยกเว้น media/drawings)
+    wb_data = {}
+    with zipfile.ZipFile(io.BytesIO(wb_bytes), 'r') as zf:
+        for fname in zf.namelist():
+            if not fname.startswith('xl/media/') and 'drawing' not in fname:
+                wb_data[fname] = zf.read(fname)
+
+    # Merge: template เป็น base + overwrite ด้วย wb_data
+    out_buf = io.BytesIO()
     try:
-        logo_bytes = None
-        with zipfile.ZipFile(io.BytesIO(tmpl_bytes), 'r') as zf:
-            media = sorted([n for n in zf.namelist() if n.startswith('xl/media/')])
-            if not media:
-                app.logger.warning("No media files in template — logo skipped")
-                return
-            logo_bytes = zf.read(media[0])
-            app.logger.info(f"Logo extracted via zipfile: {media[0]} ({len(logo_bytes)} bytes)")
-        for sn in wb.sheetnames:
-            ws = wb[sn]
-            ws._images = []
-            img = XLImage(io.BytesIO(logo_bytes))
-            img.anchor = 'A1'
-            img.width  = 520
-            img.height = 160
-            ws.add_image(img)
+        with zipfile.ZipFile(io.BytesIO(tmpl_bytes), 'r') as src_zf:
+            with zipfile.ZipFile(out_buf, 'w', zipfile.ZIP_DEFLATED) as out_zf:
+                copied = set()
+                for item in src_zf.infolist():
+                    fname = item.filename
+                    if fname in wb_data:
+                        out_zf.writestr(fname, wb_data[fname])
+                    else:
+                        out_zf.writestr(item, src_zf.read(fname))
+                    copied.add(fname)
+                for fname, data in wb_data.items():
+                    if fname not in copied:
+                        out_zf.writestr(fname, data)
+        out_buf.seek(0)
+        return out_buf
     except Exception as e:
-        app.logger.warning(f"Logo insert failed: {e}")
+        app.logger.warning(f"Logo merge failed: {e} — falling back to no-logo export")
+        wb_buf.seek(0)
+        return wb_buf
 
 @app.route('/api/export/daily', methods=['POST'])
 @login_required
@@ -539,8 +556,7 @@ def export_daily():
     ws_cm.cell(row=40,column=4).value=k1f   # D40 KPI1 ไม่ผ่าน
     ws_cm.cell(row=38,column=10).value=k2p  # J38 KPI2 ผ่าน
     ws_cm.cell(row=40,column=10).value=k2f  # J40 KPI2 ไม่ผ่าน
-    _add_logo_to_wb(wb, tmpl.read_bytes())
-    out = io.BytesIO(); wb.save(out); out.seek(0)
+    out = _save_with_logo(wb, tmpl.read_bytes())
     return send_file(out, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
                      as_attachment=True, download_name=f'CM_Daily_{date_iso}.xlsx')
 
@@ -649,8 +665,7 @@ def export_monthly():
     ws_mc.cell(row=41,column=7).value=k2f;   ws_mc.cell(row=41,column=9).value=round(k2f/k2t*100,1)   # G41, I41
     ws_mc.cell(row=39,column=12).value=k3p;  ws_mc.cell(row=39,column=14).value=round(k3p/k3t*100,1)  # L39, N39
     ws_mc.cell(row=41,column=12).value=k3f;  ws_mc.cell(row=41,column=14).value=round(k3f/k3t*100,1)  # L41, N41
-    _add_logo_to_wb(wb, tmpl.read_bytes())
-    out = io.BytesIO(); wb.save(out); out.seek(0)
+    out = _save_with_logo(wb, tmpl.read_bytes())
     return send_file(out, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
                      as_attachment=True, download_name=f'CM_Monthly_{month}.xlsx')
 
