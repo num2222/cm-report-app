@@ -474,11 +474,13 @@ def _save_with_logo(wb, tmpl_bytes):
     wb.save(wb_buf)
     wb_bytes = wb_buf.getvalue()
 
-    # ไฟล์ที่จะ overwrite จาก wb ใหม่ (ข้อมูล+styles ยกเว้น media/drawings)
+    # ไฟล์ที่จะ overwrite จาก wb ใหม่ (ข้อมูล+styles)
+    # ยกเว้น: media, drawings, sheet rels — เพราะต้องใช้จาก template เพื่อให้ Logo แสดง
+    KEEP_FROM_TMPL = {'xl/media/', 'xl/drawings/', 'xl/worksheets/_rels/'}
     wb_data = {}
     with zipfile.ZipFile(io.BytesIO(wb_bytes), 'r') as zf:
         for fname in zf.namelist():
-            if not fname.startswith('xl/media/') and 'drawing' not in fname:
+            if not any(fname.startswith(prefix) for prefix in KEEP_FROM_TMPL):
                 wb_data[fname] = zf.read(fname)
 
     # Merge: template เป็น base + overwrite ด้วย wb_data
