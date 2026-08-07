@@ -462,30 +462,61 @@ def _write_rows(ws, cases, start_row=8):
                 set_cell(ws, r, 17, f'ปิดงานวันที่ {fmt_be(close_date)}')
 
 
-def _add_logo_to_wb(wb, tmpl_bytes):
-    """สกัด Logo จาก template แล้ว re-insert ลงทุก sheet
-    ใช้ zipfile อ่านโดยตรงจาก xl/media/ เพราะ openpyxl._data() อาจ fail เงียบๆ"""
-    import zipfile
-    from openpyxl.drawing.image import Image as XLImage
+def _save_with_logo(wb):
+    """Save workbook แล้วแก้ไข output zip เพื่อให้ Logo แสดงใน Excel
+    
+    หลักการ: openpyxl preserve drawing XML และ media files ไว้ใน output
+    แต่ใช้ absolute path (/xl/media/) ใน drawing rels ซึ่ง Excel ไม่รองรับ
+    แก้โดย: iterate output zip แล้วแก้ path + ลบ externalLinks ที่ทำให้ error
+    """
+    import zipfile, re as _re
+
+    wb_buf = io.BytesIO()
+    wb.save(wb_buf)
+    saved = wb_buf.getvalue()
+
+    out_buf = io.BytesIO()
     try:
-        logo_bytes = None
-        with zipfile.ZipFile(io.BytesIO(tmpl_bytes), 'r') as zf:
-            media = sorted([n for n in zf.namelist() if n.startswith('xl/media/')])
-            if not media:
-                app.logger.warning("No media files in template — logo skipped")
-                return
-            logo_bytes = zf.read(media[0])
-            app.logger.info(f"Logo extracted via zipfile: {media[0]} ({len(logo_bytes)} bytes)")
-        for sn in wb.sheetnames:
-            ws = wb[sn]
-            ws._images = []
-            img = XLImage(io.BytesIO(logo_bytes))
-            img.anchor = 'A1'
-            img.width  = 520
-            img.height = 160
-            ws.add_image(img)
+        with zipfile.ZipFile(io.BytesIO(saved), 'r') as src:
+            with zipfile.ZipFile(out_buf, 'w', zipfile.ZIP_DEFLATED) as dst:
+                for item in src.infolist():
+                    fname = item.filename
+                    # ลบ externalLinks (ชี้ไป OneDrive ของเครื่องอื่น)
+                    if fname.startswith('xl/externalLinks') or fname == 'xl/calcChain.xml':
+                        continue
+                    data = src.read(fname)
+                    # แก้ drawing rels: /xl/media/ → ../media/ (absolute → relative)
+                    if 'drawings/_rels/' in fname and fname.endswith('.rels'):
+                        text = data.decode('utf-8', errors='replace')
+                        text = text.replace('Target="/xl/media/', 'Target="../media/')
+                        data = text.encode('utf-8')
+                    # แก้ workbook.xml.rels: ลบ externalLink + แปลง absolute path
+                    elif fname == 'xl/_rels/workbook.xml.rels':
+                        text = data.decode('utf-8', errors='replace')
+                        text = _re.sub(r'Target="/xl/([^"]+)"', lambda m: f'Target="{m.group(1)}"', text)
+                        text = _re.sub(r'<Relationship[^>]*/>', lambda m: '' if 'externalLink' in m.group() else m.group(), text)
+                        data = text.encode('utf-8')
+                    # แก้ workbook.xml: ลบ externalReferences
+                    elif fname == 'xl/workbook.xml':
+                        text = data.decode('utf-8', errors='replace')
+                        text = _re.sub(r'<externalReferences[^>]*>.*?</externalReferences>', '', text, flags=_re.DOTALL)
+                        data = text.encode('utf-8')
+                    # แก้ Content_Types: ลบ externalLink override + เพิ่ม PNG type
+                    elif fname == '[Content_Types].xml':
+                        text = data.decode('utf-8', errors='replace')
+                        text = _re.sub(r'<Override[^>]*externalLink[^>]*/>', '', text)
+                        if 'Extension="png"' not in text:
+                            text = text.replace('<Default Extension="vml"',
+                                '<Default Extension="png" ContentType="image/png" />'
+                                '<Default Extension="vml"')
+                        data = text.encode('utf-8')
+                    dst.writestr(item, data)
+        out_buf.seek(0)
+        return out_buf
     except Exception as e:
-        app.logger.warning(f"Logo insert failed: {e}")
+        app.logger.warning(f"Logo fix failed: {e}")
+        wb_buf.seek(0)
+        return wb_buf
 
 @app.route('/api/export/daily', methods=['POST'])
 @login_required
@@ -539,8 +570,7 @@ def export_daily():
     ws_cm.cell(row=40,column=4).value=k1f   # D40 KPI1 ไม่ผ่าน
     ws_cm.cell(row=38,column=10).value=k2p  # J38 KPI2 ผ่าน
     ws_cm.cell(row=40,column=10).value=k2f  # J40 KPI2 ไม่ผ่าน
-    _add_logo_to_wb(wb, tmpl.read_bytes())
-    out = io.BytesIO(); wb.save(out); out.seek(0)
+    out = _save_with_logo(wb)
     return send_file(out, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
                      as_attachment=True, download_name=f'CM_Daily_{date_iso}.xlsx')
 
@@ -649,8 +679,7 @@ def export_monthly():
     ws_mc.cell(row=41,column=7).value=k2f;   ws_mc.cell(row=41,column=9).value=round(k2f/k2t*100,1)   # G41, I41
     ws_mc.cell(row=39,column=12).value=k3p;  ws_mc.cell(row=39,column=14).value=round(k3p/k3t*100,1)  # L39, N39
     ws_mc.cell(row=41,column=12).value=k3f;  ws_mc.cell(row=41,column=14).value=round(k3f/k3t*100,1)  # L41, N41
-    _add_logo_to_wb(wb, tmpl.read_bytes())
-    out = io.BytesIO(); wb.save(out); out.seek(0)
+    out = _save_with_logo(wb)
     return send_file(out, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
                      as_attachment=True, download_name=f'CM_Monthly_{month}.xlsx')
 
