@@ -462,83 +462,30 @@ def _write_rows(ws, cases, start_row=8):
                 set_cell(ws, r, 17, f'ปิดงานวันที่ {fmt_be(close_date)}')
 
 
-def _save_with_logo(wb, tmpl_bytes):
-    """Save workbook พร้อม Logo และรักษา formula จาก template
-    
-    วิธี:
-    1. save wb → ได้ sheet XMLs ใหม่ที่มีข้อมูล (แต่ไม่มี Logo, formula เสีย)
-    2. สร้าง output จาก template เป็น base
-    3. copy เฉพาะ styles.xml, sharedStrings.xml, workbook.xml จาก wb ใหม่
-    4. แก้ไข XML ที่มีปัญหา (externalLinks, absolute paths, PNG content type)
-    → ผล: Logo ครบ, formula ครบ, ไฟล์เปิดได้ปกติ
-    """
-    import zipfile, re as _re
-
-    wb_buf = io.BytesIO()
-    wb.save(wb_buf)
-    wb_bytes = wb_buf.getvalue()
-
-    # ไฟล์ที่ใช้จาก wb ใหม่ (ข้อมูล + styles ที่ openpyxl เขียนถูกต้อง)
-    # sheet XMLs: ใช้จาก wb ใหม่ (มีข้อมูลเคส)
-    # styles, sharedStrings: ใช้จาก wb ใหม่ (เพราะ sheet XML reference style index ของ wb ใหม่)
-    TAKE_FROM_NEW = {'xl/styles.xml', 'xl/sharedStrings.xml',
-                     'docProps/app.xml', 'docProps/core.xml'}
-    new_data = {}
-    new_sheets = {}
-    with zipfile.ZipFile(io.BytesIO(wb_bytes), 'r') as zf:
-        for fname in zf.namelist():
-            if fname.startswith('xl/worksheets/sheet') and fname.endswith('.xml'):
-                new_sheets[fname] = zf.read(fname)
-            elif fname in TAKE_FROM_NEW:
-                new_data[fname] = zf.read(fname)
-
-    def fix_xml(fname, data):
-        """แก้ไข XML ที่มีปัญหา"""
-        if not (fname.endswith('.xml') or fname.endswith('.rels')):
-            return data
-        try: text = data.decode('utf-8')
-        except: return data
-
-        if 'drawings/_rels/' in fname and fname.endswith('.rels'):
-            text = text.replace('Target="/xl/media/', 'Target="../media/')
-        elif fname == 'xl/_rels/workbook.xml.rels':
-            text = _re.sub(r'Target="/xl/([^"]+)"', lambda m: f'Target="{m.group(1)}"', text)
-            text = _re.sub(r'<Relationship[^>]*/>',
-                lambda m: '' if 'externalLink' in m.group() else m.group(), text)
-        elif fname == 'xl/workbook.xml':
-            text = _re.sub(r'<externalReferences[^>]*>.*?</externalReferences>',
-                '', text, flags=_re.DOTALL)
-        elif fname == '[Content_Types].xml':
-            text = _re.sub(r'<Override[^>]*externalLink[^>]*/>', '', text)
-            if 'Extension="png"' not in text:
-                text = text.replace('<Default Extension="vml"',
-                    '<Default Extension="png" ContentType="image/png" />'
-                    '<Default Extension="vml"')
-        return text.encode('utf-8')
-
-    out_buf = io.BytesIO()
+def _add_logo_to_wb(wb, tmpl_bytes):
+    """สกัด Logo จาก template แล้ว re-insert ลงทุก sheet
+    ใช้ zipfile อ่านโดยตรงจาก xl/media/ เพราะ openpyxl._data() อาจ fail เงียบๆ"""
+    import zipfile
+    from openpyxl.drawing.image import Image as XLImage
     try:
-        with zipfile.ZipFile(io.BytesIO(tmpl_bytes), 'r') as src:
-            with zipfile.ZipFile(out_buf, 'w', zipfile.ZIP_DEFLATED) as dst:
-                for item in src.infolist():
-                    fname = item.filename
-                    if fname.startswith('xl/externalLinks') or fname == 'xl/calcChain.xml':
-                        continue
-                    # ใช้ sheet XML จาก wb ใหม่ (มีข้อมูลเคส)
-                    if fname in new_sheets:
-                        dst.writestr(fname, fix_xml(fname, new_sheets[fname]))
-                    # ใช้ styles/sharedStrings จาก wb ใหม่
-                    elif fname in new_data:
-                        dst.writestr(fname, fix_xml(fname, new_data[fname]))
-                    # ทุกอย่างอื่น (drawings, media, rels, comments) ใช้จาก template
-                    else:
-                        dst.writestr(item, fix_xml(fname, src.read(fname)))
-        out_buf.seek(0)
-        return out_buf
+        logo_bytes = None
+        with zipfile.ZipFile(io.BytesIO(tmpl_bytes), 'r') as zf:
+            media = sorted([n for n in zf.namelist() if n.startswith('xl/media/')])
+            if not media:
+                app.logger.warning("No media files in template — logo skipped")
+                return
+            logo_bytes = zf.read(media[0])
+            app.logger.info(f"Logo extracted via zipfile: {media[0]} ({len(logo_bytes)} bytes)")
+        for sn in wb.sheetnames:
+            ws = wb[sn]
+            ws._images = []
+            img = XLImage(io.BytesIO(logo_bytes))
+            img.anchor = 'A1'
+            img.width  = 520
+            img.height = 160
+            ws.add_image(img)
     except Exception as e:
-        app.logger.warning(f"Logo merge failed: {e}")
-        wb_buf.seek(0)
-        return wb_buf
+        app.logger.warning(f"Logo insert failed: {e}")
 
 @app.route('/api/export/daily', methods=['POST'])
 @login_required
@@ -592,7 +539,8 @@ def export_daily():
     ws_cm.cell(row=40,column=4).value=k1f   # D40 KPI1 ไม่ผ่าน
     ws_cm.cell(row=38,column=10).value=k2p  # J38 KPI2 ผ่าน
     ws_cm.cell(row=40,column=10).value=k2f  # J40 KPI2 ไม่ผ่าน
-    out = _save_with_logo(wb, tmpl.read_bytes())
+    _add_logo_to_wb(wb, tmpl.read_bytes())
+    out = io.BytesIO(); wb.save(out); out.seek(0)
     return send_file(out, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
                      as_attachment=True, download_name=f'CM_Daily_{date_iso}.xlsx')
 
@@ -701,7 +649,8 @@ def export_monthly():
     ws_mc.cell(row=41,column=7).value=k2f;   ws_mc.cell(row=41,column=9).value=round(k2f/k2t*100,1)   # G41, I41
     ws_mc.cell(row=39,column=12).value=k3p;  ws_mc.cell(row=39,column=14).value=round(k3p/k3t*100,1)  # L39, N39
     ws_mc.cell(row=41,column=12).value=k3f;  ws_mc.cell(row=41,column=14).value=round(k3f/k3t*100,1)  # L41, N41
-    out = _save_with_logo(wb, tmpl.read_bytes())
+    _add_logo_to_wb(wb, tmpl.read_bytes())
+    out = io.BytesIO(); wb.save(out); out.seek(0)
     return send_file(out, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
                      as_attachment=True, download_name=f'CM_Monthly_{month}.xlsx')
 
