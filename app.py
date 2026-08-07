@@ -98,7 +98,6 @@ class Case(db.Model):
 
 with app.app_context():
     db.create_all()
-    # ── Auto-migration: เพิ่ม column ใหม่ในฐานข้อมูลเดิมโดยไม่ลบข้อมูล ──
     new_columns = [
         "ALTER TABLE cases ADD COLUMN IF NOT EXISTS sap_status VARCHAR(20) DEFAULT ''",
         "ALTER TABLE cases ADD COLUMN IF NOT EXISTS sap_fail_reason TEXT",
@@ -112,10 +111,10 @@ with app.app_context():
                 try:
                     conn.execute(db.text(sql))
                 except Exception:
-                    pass  # column มีอยู่แล้ว
+                    pass
             conn.commit()
     except Exception:
-        pass  # SQLite ไม่รองรับ IF NOT EXISTS — ไม่เป็นไร
+        pass
 
 def gen_id():
     return ''.join(random.choices(string.ascii_lowercase+string.digits, k=8))+str(int(time.time()))[-4:]
@@ -126,43 +125,30 @@ def fmt_be(d):
     return f"{p[2]}/{p[1]}/{str(int(p[0])+543)[-2:]}"
 
 def kpi_sym(v):
-    """ใช้ Unicode เครื่องหมายถูก/กากบาทจริง แทนตัวอักษร P/O
-    เพื่อให้แสดงผลเหมือนกันทุก cell ไม่ขึ้นกับ font ของ template เดิม"""
     return '✓' if v == 'pass' else ('✗' if v == 'fail' else '')
 
 def _seq_num(c):
-    """แปลงค่า seq (ลำดับเคสต่อวัน) เป็นตัวเลขสำหรับ sort"""
     try:
         return int(c.get('seq') or 0)
     except (ValueError, TypeError):
         return 999999
 
 def _is_cancelled(c):
-    """เช็คว่าเคสนี้ถูกยกเลิกใบงานหรือไม่"""
     return bool(c.get('cancelled'))
 
 def _kpi2_export(c):
-    """KPI2 สำหรับ export Excel:
-    - ยกเลิกใบงาน → '' (ไม่แสดงผล KPI)
-    - ไม่มีเวลาปิดงาน → fail เสมอ (ยังไม่เสร็จ)
-    - มีเวลาปิดงาน → ใช้ค่า kpi2 จริง"""
     if _is_cancelled(c): return ''
     if not c.get('closeTime'): return 'fail'
     return c.get('kpi2', '')
 
 def _kpi_export(c, key):
-    """KPI1/KPI3 สำหรับ export: ถ้ายกเลิกใบงาน → '' (ไม่แสดง)"""
     if _is_cancelled(c): return ''
     return c.get(key, '')
 
 STD_LABELS = {'A':'5-30 นาที','B':'1-3 ชม.','C':'3 ชม.-1 วัน','D':'1-7 วัน','E':'7-14 วัน','F':'1 เดือน'}
-
-# Thai Buddhist Era date format (สำหรับ Excel แสดงวันที่แบบไทย เช่น 27 กรกฎาคม 2569)
 THAI_DATE_NUMFMT = '[$-107041E]d\\ mmmm\\ yyyy;@'
 
 def to_thai_date(iso_str):
-    """แปลง YYYY-MM-DD → datetime object (ค.ศ.) เพื่อให้ Excel แสดงเป็นวันที่ไทย
-    ต้องตั้ง number_format = THAI_DATE_NUMFMT ที่ cell ด้วย"""
     if not iso_str: return None
     try:
         from datetime import date as _date
@@ -171,27 +157,21 @@ def to_thai_date(iso_str):
     except Exception:
         return None
 
-# col N: เวลามาตรฐานในรูปแบบ ชม:นาที สำหรับ Excel
 STD_HOURS = {'A':'0:30','B':'3:00','C':'24:00','D':'168:00','E':'336:00','F':'720:00'}
 
 def fmt_response_decimal(raw):
-    """แปลงเวลาตอบรับเป็น decimal string: '15นาที' → '0.15', '20นาที' → '0.20'
-    ส่งกลับเป็น string เพื่อป้องกัน Excel แปลงเป็น time format อัตโนมัติ"""
     if not raw: return ''
     import re
     cleaned = re.sub(r'นาท[ีิ]\.?|น\.?$', '', str(raw)).strip()
     try:
         val = float(cleaned)
         if val >= 1 and val < 60:
-            # 15 → "0.15", 20 → "0.20" (string เพื่อกัน Excel time interpretation)
             return f"0.{int(val):02d}"
         return str(val)
     except:
         return raw
 
 def _trunc(val, max_len):
-    """ตัดความยาวสตริงไม่ให้เกิน max_len — ป้องกัน DataError จาก backend
-    แม้ frontend parse ผิดพลาด ระบบจะไม่ crash แต่จะตัดข้อมูลส่วนเกินทิ้ง"""
     s = (val or '')
     return s[:max_len] if len(s) > max_len else s
 
@@ -211,9 +191,9 @@ def apply_dict(c, d):
     c.start_time   = _trunc(d.get('startTime','') or d.get('arriveTime',''), 20)
     c.close_time   = _trunc(d.get('closeTime',''), 20)
     c.close_date   = _trunc(d.get('closeDate','') or '', 10) or None
-    c.location     = d.get('location','')      # Text column — ไม่จำกัด
-    c.problem      = d.get('problem','')        # Text column — ไม่จำกัด
-    c.solution     = d.get('solution','')       # Text column — ไม่จำกัด
+    c.location     = d.get('location','')
+    c.problem      = d.get('problem','')
+    c.solution     = d.get('solution','')
     c.reporter     = _trunc(d.get('reporter',''), 200)
     c.receiver     = _trunc(d.get('receiver',''), 200)
     c.technician   = _trunc(d.get('technician',''), 200)
@@ -221,15 +201,13 @@ def apply_dict(c, d):
     c.kpi2         = d.get('kpi2','')
     c.kpi3         = d.get('kpi3','')
 
-    # ── ปิด SAP: auto-set สถานะตามว่ามี SAP No. หรือไม่ ──────
-    # ถ้า frontend ส่ง sapStatus มาตรงๆ (กรณีแก้ไขในหน้า "ปิด SAP") ให้ใช้ตามนั้น
     incoming_status = d.get('sapStatus', None)
     if incoming_status is not None:
         c.sap_status = _trunc(incoming_status, 20)
     elif not sap:
-        c.sap_status = ''  # ไม่มี SAP No. — ยังไม่เข้าสู่กระบวนการปิด SAP
+        c.sap_status = ''
     elif not c.sap_status:
-        c.sap_status = 'pending'  # มี SAP No. แล้ว แต่ยังไม่เคยตั้งสถานะ → รอปิด SAP
+        c.sap_status = 'pending'
 
     c.sap_fail_reason = d.get('sapFailReason', '') or ''
     c.pending_reason  = d.get('pendingReason', '') or ''
@@ -267,7 +245,7 @@ def ping():
     try:
         db.session.execute(db.text('SELECT 1'))
         db_url = app.config['SQLALCHEMY_DATABASE_URI']
-        db_type = 'postgresql' if 'postgresql' in db_url else 'sqlite (ยังไม่ได้เชื่อม PostgreSQL)'
+        db_type = 'postgresql' if 'postgresql' in db_url else 'sqlite'
         db_status = 'connected'
     except Exception as e:
         db_type = 'unknown'
@@ -276,38 +254,21 @@ def ping():
 
 @app.route('/debug/db-info')
 def debug_db_info():
-    """หน้าเช็คสถานะ database แบบละเอียด — เปิดผ่าน browser ได้เลย"""
     db_uri      = app.config['SQLALCHEMY_DATABASE_URI']
     is_postgres = db_uri.startswith('postgresql://')
     is_sqlite   = db_uri.startswith('sqlite://')
-
     info = {
-        'db_type': 'PostgreSQL ✅' if is_postgres else
-                   ('SQLite ⚠️ (ข้อมูลจะหายทุกครั้งที่ redeploy/restart)' if is_sqlite else 'Unknown'),
+        'db_type': 'PostgreSQL ✅' if is_postgres else ('SQLite ⚠️' if is_sqlite else 'Unknown'),
         'database_url_env_set': bool(os.environ.get('DATABASE_URL')),
-        'connection_host': '',
         'total_cases': None,
-        'sample_case_ids': [],
         'connection_ok': False,
         'error': None
     }
-
     try:
-        if '@' in db_uri:
-            info['connection_host'] = db_uri.split('@')[1].split('/')[0]
-        else:
-            info['connection_host'] = '(local sqlite file)'
-    except Exception:
-        pass
-
-    try:
-        count = Case.query.count()
-        info['total_cases']    = count
-        info['sample_case_ids']= [c.id for c in Case.query.limit(5).all()]
-        info['connection_ok']  = True
+        info['total_cases'] = Case.query.count()
+        info['connection_ok'] = True
     except Exception as e:
         info['error'] = str(e)
-
     return jsonify(info)
 
 @app.route('/api/cases', methods=['GET'])
@@ -370,45 +331,35 @@ def delete_case(cid):
 @app.route('/api/cases/<cid>/sap', methods=['PUT'])
 @login_required
 def update_sap(cid):
-    """อัปเดตเฉพาะข้อมูล SAP (เลข SAP / สถานะ / เหตุผล) ใช้สำหรับ:
-    - เพิ่มเลข SAP ทีหลัง (กรณีเคสที่ไม่มี SAP No. ตอนแรก)
-    - เปลี่ยนสถานะ ปิด SAP / ปิด SAP ไม่สำเร็จ"""
     c = Case.query.get_or_404(cid)
     d = request.get_json()
-
     sap = (d.get('sapNo','') or '').strip()
     if sap and sap != c.sap_no:
         dup = Case.query.filter_by(sap_no=sap).first()
         if dup and dup.id != cid:
             return jsonify(error=f'SAP No. {sap} มีในฐานข้อมูลแล้ว'), 409
         c.sap_no = _trunc(sap, 100)
-        # เพิ่ม SAP No. ทีหลัง → เริ่มสถานะเป็น "รอปิด SAP" ถ้ายังไม่เคยตั้งสถานะ
         if not c.sap_status:
             c.sap_status = 'pending'
-
     if 'sapStatus' in d:
         c.sap_status = _trunc(d.get('sapStatus','') or '', 20)
     if 'sapFailReason' in d:
         c.sap_fail_reason = d.get('sapFailReason','') or ''
-
     c.updated_at = datetime.utcnow()
     db.session.commit()
     return jsonify(c.to_dict())
 
 def _write_rows(ws, cases, start_row=8):
     from openpyxl.styles import Font, Alignment
-    # ── font หลักสำหรับข้อมูลทั่วไปทุก cell (TH SarabunPSK 12 เสมอ) ────────
     data_font     = Font(name='TH SarabunPSK', size=12)
-    # ── font สำหรับ KPI result ✓/✗ (size 14 bold เพื่อให้เครื่องหมายชัด) ──
-    kpi_font      = Font(name='TH SarabunPSK', size=10, bold=False, color='000000')  # สีดำ บาง
-    kpi_font_fail = Font(name='TH SarabunPSK', size=10, bold=False, color='000000')  # สีดำ บาง
+    kpi_font      = Font(name='TH SarabunPSK', size=10, bold=False, color='000000')
+    kpi_font_fail = Font(name='TH SarabunPSK', size=10, bold=False, color='000000')
     center = Alignment(horizontal='center', vertical='center')
     wrap   = Alignment(wrap_text=True, vertical='center')
     left   = Alignment(vertical='center')
 
     def set_cell(ws, r, col, value, font=None, align=None):
         cell = ws.cell(row=r, column=col, value=value)
-        # บังคับ font ทุก cell ไม่ให้ inherit จาก template เดิมที่อาจไม่สม่ำเสมอ
         cell.font      = font  or data_font
         cell.alignment = align or left
         return cell
@@ -417,17 +368,12 @@ def _write_rows(ws, cases, start_row=8):
         r   = start_row + i
         std = c.get('std','')
         is_cancelled = c.get('cancelled', False)
-
-        # ── reset row height ให้สม่ำเสมอทุก row ──────────────────────────────
         ws.row_dimensions[r].height = 20
 
         set_cell(ws, r,  1, c.get('seq') or (i+1),    align=center)
         set_cell(ws, r,  2, c.get('jobNo',''),         align=center)
         set_cell(ws, r,  3, c.get('sapNo',''),         align=center)
         set_cell(ws, r,  4, c.get('notifyTime',''),    align=center)
-        # col E = ตำแหน่ง/สถานที่ — ใช้ location อย่างเดียว
-        # (location เก็บ "พื้นที่ + บริเวณ" รวมกันไว้แล้ว เช่น "MTB ชั้น 4 ด้านตรวจ...")
-        # ไม่ต้องเติม area ซ้ำอีก เพราะ sheet ชื่อ MTB/Z2/FZ/SAT1 บ่งบอก area อยู่แล้ว
         set_cell(ws, r,  5, c.get('location',''),      align=wrap)
         set_cell(ws, r,  6, c.get('problem',''),       align=wrap)
         set_cell(ws, r,  7, c.get('kpiVal',''),        align=center)
@@ -448,7 +394,6 @@ def _write_rows(ws, cases, start_row=8):
         set_cell(ws, r, 14, STD_HOURS.get(std,''),     align=center)
         set_cell(ws, r, 15, c.get('closeTime',''),     align=center)
 
-        # col Q = หมายเหตุ
         close_date = c.get('closeDate','')
         if is_cancelled:
             set_cell(ws, r, 16, '', align=center)
@@ -461,31 +406,54 @@ def _write_rows(ws, cases, start_row=8):
             if close_date and close_date != c.get('date',''):
                 set_cell(ws, r, 17, f'ปิดงานวันที่ {fmt_be(close_date)}')
 
+def _save_with_logo(wb):
+    """
+    Save workbook, check for template drawings/logos, and repair any absolute media paths 
+    or corrupt links so that Excel successfully renders the logo image in the top-left corner.
+    """
+    import zipfile, re as _re
 
-def _add_logo_to_wb(wb, tmpl_bytes):
-    """สกัด Logo จาก template แล้ว re-insert ลงทุก sheet
-    ใช้ zipfile อ่านโดยตรงจาก xl/media/ เพราะ openpyxl._data() อาจ fail เงียบๆ"""
-    import zipfile
-    from openpyxl.drawing.image import Image as XLImage
+    wb_buf = io.BytesIO()
+    wb.save(wb_buf)
+    saved = wb_buf.getvalue()
+
+    out_buf = io.BytesIO()
     try:
-        logo_bytes = None
-        with zipfile.ZipFile(io.BytesIO(tmpl_bytes), 'r') as zf:
-            media = sorted([n for n in zf.namelist() if n.startswith('xl/media/')])
-            if not media:
-                app.logger.warning("No media files in template — logo skipped")
-                return
-            logo_bytes = zf.read(media[0])
-            app.logger.info(f"Logo extracted via zipfile: {media[0]} ({len(logo_bytes)} bytes)")
-        for sn in wb.sheetnames:
-            ws = wb[sn]
-            ws._images = []
-            img = XLImage(io.BytesIO(logo_bytes))
-            img.anchor = 'A1'
-            img.width  = 520
-            img.height = 160
-            ws.add_image(img)
+        with zipfile.ZipFile(io.BytesIO(saved), 'r') as src:
+            with zipfile.ZipFile(out_buf, 'w', zipfile.ZIP_DEFLATED) as dst:
+                for item in src.infolist():
+                    fname = item.filename
+                    if fname.startswith('xl/externalLinks') or fname == 'xl/calcChain.xml':
+                        continue
+                    data = src.read(fname)
+                    if 'drawings/_rels/' in fname and fname.endswith('.rels'):
+                        text = data.decode('utf-8', errors='replace')
+                        text = text.replace('Target="/xl/media/', 'Target="../media/')
+                        data = text.encode('utf-8')
+                    elif fname == 'xl/_rels/workbook.xml.rels':
+                        text = data.decode('utf-8', errors='replace')
+                        text = _re.sub(r'Target="/xl/([^"]+)"', lambda m: f'Target="{m.group(1)}"', text)
+                        text = _re.sub(r'<Relationship[^>]*/>', lambda m: '' if 'externalLink' in m.group() else m.group(), text)
+                        data = text.encode('utf-8')
+                    elif fname == 'xl/workbook.xml':
+                        text = data.decode('utf-8', errors='replace')
+                        text = _re.sub(r'<externalReferences[^>]*>.*?</externalReferences>', '', text, flags=_re.DOTALL)
+                        data = text.encode('utf-8')
+                    elif fname == '[Content_Types].xml':
+                        text = data.decode('utf-8', errors='replace')
+                        text = _re.sub(r'<Override[^>]*externalLink[^>]*/>', '', text)
+                        if 'Extension="png"' not in text:
+                            text = text.replace('<Default Extension="vml"',
+                                '<Default Extension="png" ContentType="image/png" />'
+                                '<Default Extension="vml"')
+                        data = text.encode('utf-8')
+                    dst.writestr(item, data)
+        out_buf.seek(0)
+        return out_buf
     except Exception as e:
-        app.logger.warning(f"Logo insert failed: {e}")
+        app.logger.warning(f"Logo fix failed: {e}")
+        wb_buf.seek(0)
+        return wb_buf
 
 @app.route('/api/export/daily', methods=['POST'])
 @login_required
@@ -506,7 +474,6 @@ def export_daily():
         cases = sorted([c for c in cases_all if c.get('area')==area], key=lambda c: _seq_num(c))
         area_cases[area] = cases
         done  = [c for c in cases if c.get('closeTime')]
-        # วันที่แสดงเป็นไทย "27 กรกฎาคม 2569" โดยใช้ datetime + numfmt
         _dt_cell = ws.cell(row=4,column=6)
         _dt_cell.value = to_thai_date(date_iso)
         _dt_cell.number_format = THAI_DATE_NUMFMT
@@ -527,20 +494,15 @@ def export_daily():
         ws_cm.cell(row=r1,column=10).value=len(ac)
         ws_cm.cell(row=r2,column=10).value=len(ad)
         ws_cm.cell(row=r3,column=10).value=len(ac)-len(ad)
-    # KPI1: นับเฉพาะเคสที่ไม่ได้ยกเลิกใบงาน
     k1p=sum(1 for c in all_c if c.get('kpi1')=='pass' and not c.get('cancelled'))
     k1f=sum(1 for c in all_c if c.get('kpi1')=='fail' and not c.get('cancelled'))
-    # KPI2: ไม่มีเวลาปิดงาน = ไม่ผ่าน (ยกเว้นเคสที่ยกเลิกใบงาน)
     k2p=sum(1 for c in all_c if _kpi2_export(c)=='pass' and not c.get('cancelled'))
     k2f=sum(1 for c in all_c if _kpi2_export(c)=='fail' and not c.get('cancelled'))
-    # Daily CM: D38=KPI1 pass, D40=KPI1 fail, J38=KPI2 pass, J40=KPI2 fail
-    # F38, L38, F40, L40 เป็น formula ใน template คำนวณ % อัตโนมัติ ไม่ต้องเขียน
-    ws_cm.cell(row=38,column=4).value=k1p   # D38 KPI1 ผ่าน
-    ws_cm.cell(row=40,column=4).value=k1f   # D40 KPI1 ไม่ผ่าน
-    ws_cm.cell(row=38,column=10).value=k2p  # J38 KPI2 ผ่าน
-    ws_cm.cell(row=40,column=10).value=k2f  # J40 KPI2 ไม่ผ่าน
-    _add_logo_to_wb(wb, tmpl.read_bytes())
-    out = io.BytesIO(); wb.save(out); out.seek(0)
+    ws_cm.cell(row=38,column=4).value=k1p
+    ws_cm.cell(row=40,column=4).value=k1f
+    ws_cm.cell(row=38,column=10).value=k2p
+    ws_cm.cell(row=40,column=10).value=k2f
+    out = _save_with_logo(wb)
     return send_file(out, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
                      as_attachment=True, download_name=f'CM_Daily_{date_iso}.xlsx')
 
@@ -563,8 +525,8 @@ def export_monthly():
     def write_month_rows(ws, cases):
         from openpyxl.styles import Font, Alignment
         data_font     = Font(name='TH SarabunPSK', size=12)
-        kpi_font_pass = Font(name='TH SarabunPSK', size=10, bold=False, color='000000')  # สีดำ บาง
-        kpi_font_fail = Font(name='TH SarabunPSK', size=10, bold=False, color='000000')  # สีดำ บาง
+        kpi_font_pass = Font(name='TH SarabunPSK', size=10, bold=False, color='000000')
+        kpi_font_fail = Font(name='TH SarabunPSK', size=10, bold=False, color='000000')
         center = Alignment(horizontal='center', vertical='center')
         wrap   = Alignment(wrap_text=True, vertical='center')
 
@@ -588,7 +550,6 @@ def export_monthly():
             set_cell(ws, r,  2, c.get('jobNo',''))
             set_cell(ws, r,  3, c.get('sapNo',''))
             set_cell(ws, r,  4, c.get('notifyTime',''),   align=center)
-            # col E = ตำแหน่ง/สถานที่ — ใช้ location อย่างเดียว (ไม่เติม area ซ้ำ)
             set_cell(ws, r,  5, c.get('location',''),     align=wrap)
             set_cell(ws, r,  6, c.get('problem',''),      align=wrap)
             set_cell(ws, r,  7, c.get('kpiVal',''),       align=center)
@@ -603,7 +564,7 @@ def export_monthly():
                 clear_kpi_cell(ws, r, 11)
                 clear_kpi_cell(ws, r, 16)
                 clear_kpi_cell(ws, r, 17)
-                set_cell(ws, r, 18, 'ยกเลิกใบงาน')  # col R = หมายเหตุ
+                set_cell(ws, r, 18, 'ยกเลิกใบงาน')
             else:
                 set_kpi_cell(ws, r, 11, c.get('kpi1'))
                 set_kpi_cell(ws, r, 16, _kpi2_export(c))
@@ -639,25 +600,19 @@ def export_monthly():
     k3p=sum(1 for c in all_c if c.get('kpi3')=='pass' and not c.get('cancelled'))
     k3f=sum(1 for c in all_c if c.get('kpi3')=='fail' and not c.get('cancelled'))
     k1t=(k1p+k1f) or 1; k2t=(k2p+k2f) or 1; k3t=(k3p+k3f) or 1
-    # Month CM cell addresses ตาม Template จริง:
-    # KPI1: C39=pass count, E39=pass%, C41=fail count, E41=fail%
-    # KPI2: G39=pass count, I39=pass%, G41=fail count, I41=fail%
-    # KPI3: L39=pass count, N39=pass%, L41=fail count, N41=fail%
-    ws_mc.cell(row=39,column=3).value=k1p;   ws_mc.cell(row=39,column=5).value=round(k1p/k1t*100,1)   # C39, E39
-    ws_mc.cell(row=41,column=3).value=k1f;   ws_mc.cell(row=41,column=5).value=round(k1f/k1t*100,1)   # C41, E41
-    ws_mc.cell(row=39,column=7).value=k2p;   ws_mc.cell(row=39,column=9).value=round(k2p/k2t*100,1)   # G39, I39
-    ws_mc.cell(row=41,column=7).value=k2f;   ws_mc.cell(row=41,column=9).value=round(k2f/k2t*100,1)   # G41, I41
-    ws_mc.cell(row=39,column=12).value=k3p;  ws_mc.cell(row=39,column=14).value=round(k3p/k3t*100,1)  # L39, N39
-    ws_mc.cell(row=41,column=12).value=k3f;  ws_mc.cell(row=41,column=14).value=round(k3f/k3t*100,1)  # L41, N41
-    _add_logo_to_wb(wb, tmpl.read_bytes())
-    out = io.BytesIO(); wb.save(out); out.seek(0)
+    ws_mc.cell(row=39,column=3).value=k1p;   ws_mc.cell(row=39,column=5).value=round(k1p/k1t*100,1)
+    ws_mc.cell(row=41,column=3).value=k1f;   ws_mc.cell(row=41,column=5).value=round(k1f/k1t*100,1)
+    ws_mc.cell(row=39,column=7).value=k2p;   ws_mc.cell(row=39,column=9).value=round(k2p/k2t*100,1)
+    ws_mc.cell(row=41,column=7).value=k2f;   ws_mc.cell(row=41,column=9).value=round(k2f/k2t*100,1)
+    ws_mc.cell(row=39,column=12).value=k3p;  ws_mc.cell(row=39,column=14).value=round(k3p/k3t*100,1)
+    ws_mc.cell(row=41,column=12).value=k3f;  ws_mc.cell(row=41,column=14).value=round(k3f/k3t*100,1)
+    out = _save_with_logo(wb)
     return send_file(out, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
                      as_attachment=True, download_name=f'CM_Monthly_{month}.xlsx')
 
 @app.route('/api/export/sap', methods=['POST'])
 @login_required
 def export_sap():
-    """Export หน้าปิด SAP เป็น Excel"""
     import openpyxl
     from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
     from openpyxl.utils import get_column_letter
@@ -669,7 +624,6 @@ def export_sap():
     ws = wb.active
     ws.title = 'ปิด SAP'
 
-    # Header
     ws.merge_cells('A1:J1')
     ws['A1'] = 'รายงานปิด SAP — ระบบไฟฟ้าแรงดันต่ำ (LV System)'
     ws['A1'].font = Font(bold=True, size=13)
@@ -688,15 +642,11 @@ def export_sap():
     ws['A2'].alignment = Alignment(horizontal='center')
     ws['A2'].font = Font(size=11, color='555555')
 
-    # Column headers
     headers = ['พื้นที่','วันที่','SAP No.','Job No.','บริเวณ','ปัญหา','KPI3','สถานะ SAP','เหตุผล (ถ้าไม่สำเร็จ)']
     col_widths = [8, 10, 12, 10, 22, 28, 8, 14, 30]
     hdr_fill = PatternFill('solid', fgColor='1A3A5C')
     hdr_font = Font(color='FFFFFF', bold=True, size=11)
-    thin = Border(
-        left=Side(style='thin'), right=Side(style='thin'),
-        top=Side(style='thin'), bottom=Side(style='thin')
-    )
+    thin = Border(left=Side(style='thin'), right=Side(style='thin'), top=Side(style='thin'), bottom=Side(style='thin'))
     for ci, (h, w) in enumerate(zip(headers, col_widths), 1):
         cell = ws.cell(row=3, column=ci, value=h)
         cell.fill = hdr_fill
@@ -727,8 +677,6 @@ def export_sap():
             cell.alignment = Alignment(vertical='center', wrap_text=True)
 
     ws.row_dimensions[3].height = 20
-
-    # Summary row
     summary_row = len(cases) + 4
     ws.cell(row=summary_row, column=1, value=f'รวม {len(cases)} เคส')
     ws.cell(row=summary_row, column=1).font = Font(bold=True)
@@ -739,12 +687,9 @@ def export_sap():
     return send_file(out, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
                      as_attachment=True, download_name='CM_SAP_Status.xlsx')
 
-# ── BACKUP / IMPORT ────────────────────────────────────────────────────
 @app.route('/api/backup', methods=['GET'])
 @login_required
 def backup_db():
-    """Export ข้อมูลทั้งหมดเป็น JSON file สำหรับ backup
-    เรียกผ่าน GET /api/backup → ดาวน์โหลดไฟล์ cm_backup_YYYYMMDD.json"""
     cases = Case.query.order_by(Case.date, Case.area, Case.seq).all()
     data = {
         'version': '1.0',
@@ -757,19 +702,11 @@ def backup_db():
     buf.seek(0)
     from datetime import date
     filename = f"cm_backup_{date.today().strftime('%Y%m%d')}.json"
-    return send_file(buf, mimetype='application/json',
-                     as_attachment=True, download_name=filename)
+    return send_file(buf, mimetype='application/json', as_attachment=True, download_name=filename)
 
 @app.route('/api/import', methods=['POST'])
 @login_required
 def import_db():
-    """Import ข้อมูลจากไฟล์ JSON backup กลับเข้า database
-    Body: multipart/form-data
-      - file: ไฟล์ .json จาก /api/backup
-      - mode: 'merge' (default) = เพิ่มเคสที่ยังไม่มีใน DB
-              'replace' = ลบทั้งหมดแล้ว import ใหม่ (ต้องส่ง confirm=true ด้วย)"""
-
-    # อ่าน mode/confirm จาก form data ก่อนเสมอ (multipart)
     ct = request.content_type or ''
     if 'multipart' in ct or 'form' in ct:
         mode    = request.form.get('mode', 'merge')
@@ -779,9 +716,8 @@ def import_db():
         mode    = d.get('mode', 'merge')
         confirm = str(d.get('confirm', ''))
 
-    # รับ file จาก multipart upload
     if 'file' not in request.files:
-        return jsonify(error='ไม่พบ file ใน request — ส่งเป็น multipart/form-data field "file"'), 400
+        return jsonify(error='ไม่พบ file ใน request'), 400
 
     f = request.files['file']
     try:
@@ -816,25 +752,10 @@ def import_db():
                 db.session.add(c)
             imported += 1
         except Exception as e:
-            app.logger.error(f"Import error for case {d.get('id')}: {e}")
             errors += 1
 
     db.session.commit()
-    return jsonify(
-        ok=True,
-        mode=mode,
-        imported=imported,
-        skipped=skipped,
-        errors=errors,
-        total_in_db=Case.query.count()
-    )
-
-
-def handle_500(e):
-    """ทุก error ที่ไม่ถูกจับจะ return JSON แทน HTML error page เสมอ"""
-    db.session.rollback()
-    app.logger.error(f"Unhandled 500 error: {e}")
-    return jsonify(error=f'เกิดข้อผิดพลาดที่ server: {str(e)}'), 500
+    return jsonify(ok=True, mode=mode, imported=imported, skipped=skipped, errors=errors, total_in_db=Case.query.count())
 
 @app.errorhandler(404)
 def handle_404(e):
@@ -842,12 +763,9 @@ def handle_404(e):
 
 @app.errorhandler(Exception)
 def handle_exception(e):
-    """จับ exception ทุกชนิดที่ไม่มี handler เฉพาะ — กัน DataError, IntegrityError ฯลฯ"""
     db.session.rollback()
-    app.logger.error(f"Unhandled exception: {type(e).__name__}: {e}")
     code = getattr(e, 'code', 500)
-    if not isinstance(code, int):
-        code = 500
+    if not isinstance(code, int): code = 500
     return jsonify(error=f'เกิดข้อผิดพลาด: {str(e)}'), code
 
 if __name__ == '__main__':
