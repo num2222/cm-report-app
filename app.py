@@ -155,9 +155,78 @@ def _kpi_export(c, key):
     if _is_cancelled(c): return ''
     return c.get(key, '')
 
-STD_LABELS = {'A':'5-30 นาที','B':'1-3 ชม.','C':'3 ชม.-1 วัน','D':'1-7 วัน','E':'7-14 วัน','F':'1 เดือน'}
+STD_HOURS = {'A':'0:30','B':'3:00','C':'24:00','D':'168:00','E':'336:00','F':'720:00'}
 
-# Thai Buddhist Era date format (สำหรับ Excel แสดงวันที่แบบไทย เช่น 27 กรกฎาคม 2569)
+_THAI_EPOCH = None
+
+def _date_serial(iso_str):
+    """YYYY-MM-DD → Excel serial number"""
+    global _THAI_EPOCH
+    if _THAI_EPOCH is None:
+        from datetime import datetime as _dt
+        _THAI_EPOCH = _dt(1899, 12, 30)
+    try:
+        from datetime import datetime as _dt
+        return (_dt.strptime(str(iso_str)[:10], '%Y-%m-%d') - _THAI_EPOCH).days
+    except: return ''
+
+def _xml_esc(v):
+    return str(v).replace('&','&amp;').replace('<','&lt;').replace('>','&gt;')
+
+# Column → style index mapping จาก template MTB row 8
+_SHEET_COL_STYLES = {
+    'A':'50','B':'50','C':'50','D':'51','E':'52','F':'52',
+    'G':'50','H':'51','I':'51','J':'51','K':'50','L':'52',
+    'M':'53','N':'54','O':'51','P':'50','Q':'52'
+}
+
+def _make_row(row_num, c, is_cancelled=False):
+    """สร้าง row XML สำหรับ 1 เคส"""
+    def n(col, val, s):
+        if val is None or val=='': return f'<c r="{col}{row_num}" s="{s}"/>'
+        return f'<c r="{col}{row_num}" s="{s}"><v>{_xml_esc(val)}</v></c>'
+    def t(col, val, s):
+        if val is None or val=='': return f'<c r="{col}{row_num}" s="{s}"/>'
+        return f'<c r="{col}{row_num}" s="{s}" t="inlineStr"><is><t>{_xml_esc(val)}</t></is></c>'
+    kpi1 = '' if is_cancelled else (c.get('kpi1') or '')
+    kpi2 = '' if is_cancelled else _kpi2_export(c)
+    close_date = c.get('closeDate','') or ''
+    cross_day = close_date and close_date != c.get('date','')
+    remark = 'ยกเลิกใบงาน' if is_cancelled else (f"ปิดงานวันที่ {fmt_be(close_date)}" if cross_day else c.get('remark',''))
+    cells = (
+        t('A',c.get('seq',''),50) + t('B',c.get('jobNo',''),50) +
+        t('C',c.get('sapNo',''),50) + t('D',c.get('notifyTime',''),51) +
+        t('E',c.get('location',''),52) + t('F',c.get('problem',''),52) +
+        t('G',c.get('kpiVal',''),50) + t('H',fmt_response_decimal(c.get('responseTime','')),51) +
+        t('I',c.get('approveTime',''),51) + t('J',c.get('arriveTime',''),51) +
+        t('K',kpi_sym(kpi1) if kpi1 else '',50) + t('L',c.get('solution',''),52) +
+        t('M',c.get('std',''),53) + t('N',STD_HOURS.get(c.get('std',''),''),54) +
+        t('O',c.get('closeTime',''),51) + t('P',kpi_sym(kpi2) if kpi2 else '',50) +
+        t('Q',remark,52)
+    )
+    return f'<row r="{row_num}" spans="1:19" s="55" customFormat="1" x14ac:dyDescent="0.3">{cells}</row>'
+
+def _patch_area_sheet(sheet_xml, date_iso, cases, done, pending):
+    """Patch sheet XML ของแต่ละพื้นที่: วันที่ + count + data rows"""
+    import re as _re
+
+    # แก้ F4 (date serial)
+    serial = _date_serial(date_iso)
+    sheet_xml = _re.sub(r'<c r="F4"[^>]*/>', f'<c r="F4" s="86"><v>{serial}</v></c>', sheet_xml)
+    # แก้ K4 (done count) และ P4 (pending count)
+    sheet_xml = _re.sub(r'<c r="K4"[^>]*(?:/>|>.*?</c>)', f'<c r="K4" s="7"><v>{done}</v></c>', sheet_xml, flags=_re.DOTALL)
+    sheet_xml = _re.sub(r'<c r="P4"[^>]*(?:/>|>.*?</c>)', f'<c r="P4" s="7"><v>{pending}</v></c>', sheet_xml, flags=_re.DOTALL)
+
+    # แทนที่ data rows 8+
+    new_rows = ''.join(_make_row(8+i, c, bool(c.get('cancelled'))) for i,c in enumerate(cases))
+    sheet_xml = _re.sub(
+        r'<row r="8"[^>]*>.*?(?=<row r="2[1-9]"|</sheetData>)',
+        new_rows,
+        sheet_xml, flags=_re.DOTALL
+    )
+    return sheet_xml
+
+
 THAI_DATE_NUMFMT = '[$-107041E]d\\ mmmm\\ yyyy;@'
 
 def to_thai_date(iso_str):
@@ -462,74 +531,56 @@ def _write_rows(ws, cases, start_row=8):
                 set_cell(ws, r, 17, f'ปิดงานวันที่ {fmt_be(close_date)}')
 
 
-# ── helpers สำหรับ export Excel แบบ patch XML โดยตรง ──────────────────
-_THAI_EPOCH = None
-def _date_serial(iso_str):
-    """แปลง YYYY-MM-DD → Excel serial number สำหรับใส่ใน cell XML"""
-    global _THAI_EPOCH
-    if _THAI_EPOCH is None:
-        from datetime import datetime as _dt
-        _THAI_EPOCH = _dt(1899, 12, 30)
-    try:
-        from datetime import datetime as _dt
-        return (_dt.strptime(str(iso_str)[:10], '%Y-%m-%d') - _THAI_EPOCH).days
-    except: return ''
 
-def _xml_esc(v):
-    return str(v).replace('&','&amp;').replace('<','&lt;').replace('>','&gt;')
+def _fix_and_save(wb):
+    """Save workbook ให้ Logo แสดงใน Excel โดยไม่ทำลาย formula/styles
+    
+    openpyxl preserve: media images, drawing XMLs, formula rows ครบ
+    ปัญหาเดียวคือ drawing rels ใช้ absolute path → แก้เป็น relative
+    และ externalLinks ทำให้ Excel error → ลบออก
+    """
+    import zipfile, re as _re
 
-def _make_row(row_num, c, is_cancelled=False):
-    """สร้าง row XML สำหรับ 1 เคส ใช้ style index จาก template MTB row 8"""
-    # style: A,B,C,G,K,P=s50  D,H,I,J,O=s51  E,F,L,Q=s52  M=s53  N=s54
-    def n(col, val, s):
-        if val is None or val=='': return f'<c r="{col}{row_num}" s="{s}"/>'
-        return f'<c r="{col}{row_num}" s="{s}"><v>{_xml_esc(val)}</v></c>'
-    def t(col, val, s):
-        if val is None or val=='': return f'<c r="{col}{row_num}" s="{s}"/>'
-        return f'<c r="{col}{row_num}" s="{s}" t="inlineStr"><is><t>{_xml_esc(val)}</t></is></c>'
-    kpi1 = '' if is_cancelled else (c.get('kpi1') or '')
-    kpi2 = '' if is_cancelled else (_kpi2_export(c) if c.get('closeTime') else 'fail')
-    kpi2_sym = kpi_sym(kpi2) if kpi2 else ''
-    remark = 'ยกเลิกใบงาน' if is_cancelled else c.get('remark','')
-    cells = (
-        n('A', c.get('seq',''),50) + t('B',c.get('jobNo',''),50) +
-        t('C',c.get('sapNo',''),50) + t('D',c.get('notifyTime',''),51) +
-        t('E',c.get('location',''),52) + t('F',c.get('problem',''),52) +
-        t('G',c.get('kpiVal',''),50) + t('H',fmt_response_decimal(c.get('responseTime','')),51) +
-        t('I',c.get('approveTime',''),51) + t('J',c.get('arriveTime',''),51) +
-        t('K',kpi_sym(kpi1) if kpi1 else '',50) + t('L',c.get('solution',''),52) +
-        t('M',c.get('std',''),53) + t('N',STD_HOURS.get(c.get('std',''),''),54) +
-        t('O',c.get('closeTime',''),51) + t('P',kpi2_sym,50) +
-        t('Q',remark,52)
-    )
-    return f'<row r="{row_num}" spans="1:19" s="55" customFormat="1" x14ac:dyDescent="0.3">{cells}</row>'
+    buf = io.BytesIO()
+    wb.save(buf)
+    saved = buf.getvalue()
 
-def _patch_area_sheet(sheet_xml, date_iso, cases, done, pending):
-    """Patch sheet XML ของแต่ละพื้นที่โดยตรง: วันที่ + count + data rows"""
-    import re as _re
-    def set_cell(xml, ref, style, val, numeric=True):
-        tag = f'<c r="{ref}"[^>]*/>'
-        if numeric:
-            repl = f'<c r="{ref}" s="{style}"><v>{val}</v></c>'
-        else:
-            repl = f'<c r="{ref}" s="{style}" t="inlineStr"><is><t>{_xml_esc(val)}</t></is></c>'
-        return _re.sub(tag, repl, xml)
-    
-    serial = _date_serial(date_iso)
-    sheet_xml = set_cell(sheet_xml, 'F4', '86', serial)
-    sheet_xml = set_cell(sheet_xml, 'K4', '7', done)
-    sheet_xml = set_cell(sheet_xml, 'P4', '7', pending)
-    
-    # สร้าง data rows
-    new_rows = ''.join(_make_row(8+i, c, bool(c.get('cancelled'))) for i,c in enumerate(cases))
-    
-    # แทนที่ rows 8-20 (data section) ด้วย rows ใหม่
-    sheet_xml = _re.sub(
-        r'<row r="8"[^>]*>.*?(?=<row r="2[1-9]"|</sheetData>)',
-        new_rows,
-        sheet_xml, flags=_re.DOTALL
-    )
-    return sheet_xml
+    out = io.BytesIO()
+    with zipfile.ZipFile(io.BytesIO(saved), 'r') as src:
+        with zipfile.ZipFile(out, 'w', zipfile.ZIP_DEFLATED) as dst:
+            for item in src.infolist():
+                fname = item.filename
+                # ลบ externalLinks (ชี้ไป OneDrive ของเครื่องอื่น → Excel error)
+                if fname.startswith('xl/externalLinks') or fname == 'xl/calcChain.xml':
+                    continue
+                data = src.read(fname)
+                # แก้ drawing rels: /xl/media/ → ../media/
+                if 'drawings/_rels/' in fname and fname.endswith('.rels'):
+                    text = data.decode('utf-8', errors='replace')
+                    text = text.replace('Target="/xl/media/', 'Target="../media/')
+                    data = text.encode('utf-8')
+                # ลบ externalLink ref ออกจาก workbook.xml.rels
+                elif fname == 'xl/_rels/workbook.xml.rels':
+                    text = data.decode('utf-8', errors='replace')
+                    text = _re.sub(r'<Relationship[^>]*/>', lambda m: '' if 'externalLink' in m.group() else m.group(), text)
+                    data = text.encode('utf-8')
+                # ลบ externalReferences ออกจาก workbook.xml
+                elif fname == 'xl/workbook.xml':
+                    text = data.decode('utf-8', errors='replace')
+                    text = _re.sub(r'<externalReferences[^>]*>.*?</externalReferences>', '', text, flags=_re.DOTALL)
+                    data = text.encode('utf-8')
+                # แก้ Content_Types: ลบ externalLink override
+                elif fname == '[Content_Types].xml':
+                    text = data.decode('utf-8', errors='replace')
+                    text = _re.sub(r'<Override[^>]*externalLink[^>]*/>', '', text)
+                    if 'Extension="png"' not in text:
+                        text = text.replace('<Default Extension="vml"',
+                            '<Default Extension="png" ContentType="image/png" />'
+                            '<Default Extension="vml"')
+                    data = text.encode('utf-8')
+                dst.writestr(item, data)
+    out.seek(0)
+    return out
 
 def _build_excel(tmpl_bytes, sheet_patches, summary_patches):
     """สร้าง Excel output โดย patch XML โดยตรงจาก template
@@ -565,6 +616,21 @@ def _build_excel(tmpl_bytes, sheet_patches, summary_patches):
         if rid in rid_to_file:
             name_to_zip[name] = rid_to_file[rid]
     
+    # สร้าง wb ชั่วคราวเพื่อดึง styles.xml ที่มี style index ครบ
+    # (template มี ~89 styles แต่ openpyxl เพิ่ม styles ใหม่ทำให้ต้องใช้ wb ใหม่)
+    extra_files = {}
+    try:
+        from openpyxl import load_workbook as _lw
+        _wb_tmp = _lw(io.BytesIO(tmpl_bytes))
+        _wb_buf = io.BytesIO()
+        _wb_tmp.save(_wb_buf)
+        with zipfile.ZipFile(io.BytesIO(_wb_buf.getvalue()),'r') as _zf_tmp:
+            for _f in ['xl/styles.xml', 'xl/sharedStrings.xml']:
+                if _f in _zf_tmp.namelist():
+                    extra_files[_f] = _zf_tmp.read(_f)
+    except Exception as _e:
+        pass  # ถ้าดึงไม่ได้ก็ใช้ template เดิม
+
     out_buf = io.BytesIO()
     with zipfile.ZipFile(io.BytesIO(tmpl_bytes),'r') as src:
         with zipfile.ZipFile(out_buf, 'w', zipfile.ZIP_DEFLATED) as dst:
@@ -584,6 +650,9 @@ def _build_excel(tmpl_bytes, sheet_patches, summary_patches):
                 
                 if patched_name:
                     data = sheet_patches[patched_name].encode('utf-8')
+                elif fname in extra_files:
+                    # ใช้ styles.xml จาก wb ใหม่ (มี style index ครบ)
+                    data = extra_files[fname]
                 else:
                     # แก้ XML ที่มีปัญหา (paths, externalLinks)
                     if fname == 'xl/_rels/workbook.xml.rels':
