@@ -463,75 +463,6 @@ def _write_rows(ws, cases, start_row=8):
 
 
 
-def _inject_images(wb_bytes, tmpl_bytes):
-    """Copy media (images) และ drawing rels จาก template เข้าไปใน output
-    เพราะ openpyxl.save() ไม่ preserve images จาก template ที่โหลดมา
-    วิธีนี้: inject media files + แก้ drawing rels path + ลบ externalLinks
-    ทำให้ Logo แสดงทุก sheet โดยไม่ทำลาย formula/data
-    """
-    import zipfile, re as _re
-
-    # ดึง media และ drawing files จาก template
-    tmpl_extras = {}  # fname → bytes
-    with zipfile.ZipFile(io.BytesIO(tmpl_bytes), 'r') as tzf:
-        for fname in tzf.namelist():
-            if fname.startswith('xl/media/') or \
-               ('xl/drawings/' in fname and 'rels' in fname):
-                tmpl_extras[fname] = tzf.read(fname)
-
-    if not tmpl_extras:
-        buf = io.BytesIO(wb_bytes); buf.seek(0); return buf
-
-    out = io.BytesIO()
-    with zipfile.ZipFile(io.BytesIO(wb_bytes), 'r') as src:
-        with zipfile.ZipFile(out, 'w', zipfile.ZIP_DEFLATED) as dst:
-            existing = set(src.namelist())
-            for item in src.infolist():
-                fname = item.filename
-                data  = src.read(fname)
-
-                # ลบ externalLinks
-                if fname.startswith('xl/externalLinks') or fname == 'xl/calcChain.xml':
-                    continue
-
-                # แก้ drawing rels: absolute /xl/media/ → relative ../media/
-                if 'drawings/_rels/' in fname and fname.endswith('.rels'):
-                    text = data.decode('utf-8', errors='replace')
-                    text = text.replace('Target="/xl/media/', 'Target="../media/')
-                    data = text.encode('utf-8')
-
-                # แก้ workbook.xml.rels: ลบ externalLink
-                elif fname == 'xl/_rels/workbook.xml.rels':
-                    text = data.decode('utf-8', errors='replace')
-                    text = _re.sub(r'<Relationship[^>]*/>', lambda m: '' if 'externalLink' in m.group() else m.group(), text)
-                    data = text.encode('utf-8')
-
-                # แก้ workbook.xml: ลบ externalReferences
-                elif fname == 'xl/workbook.xml':
-                    text = data.decode('utf-8', errors='replace')
-                    text = _re.sub(r'<externalReferences[^>]*>.*?</externalReferences>', '', text, flags=_re.DOTALL)
-                    data = text.encode('utf-8')
-
-                # แก้ Content_Types: ลบ externalLink + เพิ่ม PNG
-                elif fname == '[Content_Types].xml':
-                    text = data.decode('utf-8', errors='replace')
-                    text = _re.sub(r'<Override[^>]*externalLink[^>]*/>', '', text)
-                    if 'Extension="png"' not in text:
-                        text = text.replace('<Default Extension="vml"',
-                            '<Default Extension="png" ContentType="image/png" /><Default Extension="vml"')
-                    data = text.encode('utf-8')
-
-                dst.writestr(item, data)
-
-            # inject media จาก template (เฉพาะที่ยังไม่มีใน output)
-            for fname, fdata in tmpl_extras.items():
-                if fname not in existing:
-                    dst.writestr(fname, fdata)
-
-    out.seek(0)
-    return out
-
-
 @app.route('/api/export/daily', methods=['POST'])
 @login_required
 def export_daily():
@@ -584,8 +515,7 @@ def export_daily():
     ws_cm.cell(row=40,column=4).value=k1f   # D40 KPI1 ไม่ผ่าน
     ws_cm.cell(row=38,column=10).value=k2p  # J38 KPI2 ผ่าน
     ws_cm.cell(row=40,column=10).value=k2f  # J40 KPI2 ไม่ผ่าน
-    out = io.BytesIO(); wb.save(out)
-    out = _inject_images(out.getvalue(), tmpl.read_bytes())
+    out = io.BytesIO(); wb.save(out); out.seek(0)
     return send_file(out, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
                      as_attachment=True, download_name=f'CM_Daily_{date_iso}.xlsx')
 
@@ -605,30 +535,17 @@ def export_monthly():
     areas = ['MTB','Z2','FZ','SAT1']
     area_cases = {}
 
-    def write_month_rows(ws, cases, include_area=False):
-        """เขียนข้อมูลลง Monthly sheet
-        include_area=True สำหรับ ALL_ZONE ที่มี column พื้นที่ด้วย
-
-        Layout ใหม่ MTB/Z2/FZ/SAT1:
-          A=No, B=วันที่, C=Job No, D=SAP No, E=เวลาแจ้ง, F=ตำแหน่ง, G=ปัญหา
-          H=KPI No(Val), I=STD hrs, J=อนุมัติ, K=ถึงหน้างาน, L=ผลKPI1
-          M=การแก้ไข, N=KPI No, O=STD hrs, P=ปิดงาน, Q=ผลKPI2, R=ผลKPI3, S=หมายเหตุ
-
-        Layout ใหม่ ALL_ZONE (เพิ่ม B=วันที่, C=พื้นที่):
-          A=No, B=วันที่, C=พื้นที่, D=Job No, E=SAP No, F=เวลาแจ้ง
-          G=ตำแหน่ง, H=ปัญหา, I=KPI No(Val), J=STD hrs, K=อนุมัติ, L=ถึงหน้างาน, M=ผลKPI1
-          N=การแก้ไข, O=KPI No, P=STD hrs, Q=ปิดงาน, R=ผลKPI2, S=ผลKPI3, T=หมายเหตุ
-        """
+    def write_month_rows(ws, cases):
         from openpyxl.styles import Font, Alignment
         data_font     = Font(name='TH SarabunPSK', size=12)
-        kpi_font_pass = Font(name='TH SarabunPSK', size=10, bold=False, color='000000')
-        kpi_font_fail = Font(name='TH SarabunPSK', size=10, bold=False, color='000000')
+        kpi_font_pass = Font(name='TH SarabunPSK', size=10, bold=False, color='000000')  # สีดำ บาง
+        kpi_font_fail = Font(name='TH SarabunPSK', size=10, bold=False, color='000000')  # สีดำ บาง
         center = Alignment(horizontal='center', vertical='center')
         wrap   = Alignment(wrap_text=True, vertical='center')
 
         def set_cell(ws, r, col, value, font=None, align=None):
             cell = ws.cell(row=r, column=col, value=value)
-            cell.font      = font or data_font
+            cell.font      = font  or data_font
             cell.alignment = align or Alignment(vertical='center')
 
         def set_kpi_cell(ws, r, col, val):
@@ -638,46 +555,36 @@ def export_monthly():
         def clear_kpi_cell(ws, r, col):
             set_cell(ws, r, col, '', align=center)
 
-        # offset: ALL_ZONE มี column พื้นที่เพิ่ม 1 column (B=date, C=area → shift +1)
-        o = 1 if include_area else 0  # column offset สำหรับ ALL_ZONE
-
-        for i, c in enumerate(cases):
-            r = 3 + i
-            std = c.get('std','')
+        for i,c in enumerate(cases):
+            r=3+i; std=c.get('std','')
             is_cancelled = c.get('cancelled', False)
             close_date   = c.get('closeDate','')
-
-            set_cell(ws, r, 1, c.get('seq') or (i+1))
-            set_cell(ws, r, 2, c.get('date',''), align=center)          # B = วันที่ (ใหม่)
-            if include_area:
-                set_cell(ws, r, 3, c.get('area',''), align=center)      # C = พื้นที่ (ALL_ZONE เท่านั้น)
-            set_cell(ws, r, 3+o, c.get('jobNo',''))                     # C / D = Job No
-            set_cell(ws, r, 4+o, c.get('sapNo',''))                     # D / E = SAP No
-            set_cell(ws, r, 5+o, c.get('notifyTime',''), align=center)  # E / F = เวลาแจ้ง
-            set_cell(ws, r, 6+o, c.get('location',''), align=wrap)      # F / G = ตำแหน่ง
-            set_cell(ws, r, 7+o, c.get('problem',''), align=wrap)       # G / H = ปัญหา
-            set_cell(ws, r, 8+o, c.get('kpiVal',''), align=center)      # H / I = KPI No (Val)
-            set_cell(ws, r, 9+o, fmt_response_decimal(c.get('responseTime','')), align=center)  # I / J = ตอบรับ
-            set_cell(ws, r, 10+o, c.get('approveTime',''), align=center) # J / K = อนุมัติ
-            set_cell(ws, r, 11+o, c.get('arriveTime',''), align=center)  # K / L = ถึงหน้างาน
-            # L / M = ผล KPI1
-            set_cell(ws, r, 13+o, c.get('solution',''), align=wrap)     # M / N = การแก้ไข
-            set_cell(ws, r, 14+o, std, align=center)                    # N / O = KPI No (std code)
-            set_cell(ws, r, 15+o, STD_HOURS.get(std,''), align=center)  # O / P = STD hrs
-            set_cell(ws, r, 16+o, c.get('closeTime',''), align=center)  # P / Q = ปิดงาน
-            # Q / R = ผล KPI2, R / S = ผล KPI3, S / T = หมายเหตุ
-
+            set_cell(ws, r,  1, c.get('seq') or (i+1))
+            set_cell(ws, r,  2, c.get('jobNo',''))
+            set_cell(ws, r,  3, c.get('sapNo',''))
+            set_cell(ws, r,  4, c.get('notifyTime',''),   align=center)
+            # col E = ตำแหน่ง/สถานที่ — ใช้ location อย่างเดียว (ไม่เติม area ซ้ำ)
+            set_cell(ws, r,  5, c.get('location',''),     align=wrap)
+            set_cell(ws, r,  6, c.get('problem',''),      align=wrap)
+            set_cell(ws, r,  7, c.get('kpiVal',''),       align=center)
+            set_cell(ws, r,  8, fmt_response_decimal(c.get('responseTime','')), align=center)
+            set_cell(ws, r,  9, c.get('approveTime',''),  align=center)
+            set_cell(ws, r, 10, c.get('arriveTime',''),   align=center)
+            set_cell(ws, r, 12, c.get('solution',''),     align=wrap)
+            set_cell(ws, r, 13, std,                      align=center)
+            set_cell(ws, r, 14, STD_HOURS.get(std,''),    align=center)
+            set_cell(ws, r, 15, c.get('closeTime',''),    align=center)
             if is_cancelled:
-                clear_kpi_cell(ws, r, 12+o)   # KPI1
-                clear_kpi_cell(ws, r, 17+o)   # KPI2
-                clear_kpi_cell(ws, r, 18+o)   # KPI3
-                set_cell(ws, r, 19+o, 'ยกเลิกใบงาน')  # หมายเหตุ
+                clear_kpi_cell(ws, r, 11)
+                clear_kpi_cell(ws, r, 16)
+                clear_kpi_cell(ws, r, 17)
+                set_cell(ws, r, 18, 'ยกเลิกใบงาน')  # col R = หมายเหตุ
             else:
-                set_kpi_cell(ws, r, 12+o, c.get('kpi1'))
-                set_kpi_cell(ws, r, 17+o, _kpi2_export(c))
-                set_kpi_cell(ws, r, 18+o, c.get('kpi3'))
+                set_kpi_cell(ws, r, 11, c.get('kpi1'))
+                set_kpi_cell(ws, r, 16, _kpi2_export(c))
+                set_kpi_cell(ws, r, 17, c.get('kpi3'))
                 if close_date and close_date != c.get('date',''):
-                    set_cell(ws, r, 19+o, f'ปิดงานวันที่ {fmt_be(close_date)}')
+                    set_cell(ws, r, 18, f'ปิดงานวันที่ {fmt_be(close_date)}')
 
     for area in areas:
         cases = sorted([c for c in cases_all if c.get('area')==area],
@@ -687,7 +594,7 @@ def export_monthly():
 
     all_sorted = sorted([c for a in areas for c in area_cases[a]],
                         key=lambda c:(c.get('date',''), c.get('area',''), _seq_num(c)))
-    write_month_rows(wb['ALL_ZONE'], all_sorted, include_area=True)
+    write_month_rows(wb['ALL_ZONE'], all_sorted)
 
     ws_mc = wb['Month CM']
     ws_mc.cell(row=7,column=5).value = month_be
@@ -717,8 +624,7 @@ def export_monthly():
     ws_mc.cell(row=41,column=7).value=k2f;   ws_mc.cell(row=41,column=9).value=round(k2f/k2t*100,1)   # G41, I41
     ws_mc.cell(row=39,column=12).value=k3p;  ws_mc.cell(row=39,column=14).value=round(k3p/k3t*100,1)  # L39, N39
     ws_mc.cell(row=41,column=12).value=k3f;  ws_mc.cell(row=41,column=14).value=round(k3f/k3t*100,1)  # L41, N41
-    out = io.BytesIO(); wb.save(out)
-    out = _inject_images(out.getvalue(), tmpl.read_bytes())
+    out = io.BytesIO(); wb.save(out); out.seek(0)
     return send_file(out, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
                      as_attachment=True, download_name=f'CM_Monthly_{month}.xlsx')
 
