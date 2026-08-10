@@ -535,17 +535,27 @@ def export_monthly():
     areas = ['MTB','Z2','FZ','SAT1']
     area_cases = {}
 
-    def write_month_rows(ws, cases):
+    def write_month_rows(ws, cases, include_area=False):
+        """Layout ใหม่ MTB/Z2/FZ/SAT1:
+          A=No, B=วันที่, C=Job No, D=SAP No, E=เวลาแจ้ง, F=ตำแหน่ง, G=ปัญหา
+          H=KPI Val, I=ตอบรับ, J=อนุมัติ, K=ถึงหน้างาน, L=KPI1
+          M=การแก้ไข, N=std code, O=STD hrs, P=ปิดงาน, Q=KPI2, R=KPI3, S=หมายเหตุ
+
+        Layout ใหม่ ALL_ZONE (include_area=True):
+          A=No, B=วันที่, C=พื้นที่, D=Job No, E=SAP No, F=เวลาแจ้ง
+          G=ตำแหน่ง, H=ปัญหา, I=KPI Val, J=ตอบรับ, K=อนุมัติ, L=ถึงหน้างาน, M=KPI1
+          N=การแก้ไข, O=std code, P=STD hrs, Q=ปิดงาน, R=KPI2, S=KPI3, T=หมายเหตุ
+        """
         from openpyxl.styles import Font, Alignment
         data_font     = Font(name='TH SarabunPSK', size=12)
-        kpi_font_pass = Font(name='TH SarabunPSK', size=10, bold=False, color='000000')  # สีดำ บาง
-        kpi_font_fail = Font(name='TH SarabunPSK', size=10, bold=False, color='000000')  # สีดำ บาง
+        kpi_font_pass = Font(name='TH SarabunPSK', size=10, bold=False, color='000000')
+        kpi_font_fail = Font(name='TH SarabunPSK', size=10, bold=False, color='000000')
         center = Alignment(horizontal='center', vertical='center')
         wrap   = Alignment(wrap_text=True, vertical='center')
 
         def set_cell(ws, r, col, value, font=None, align=None):
             cell = ws.cell(row=r, column=col, value=value)
-            cell.font      = font  or data_font
+            cell.font      = font or data_font
             cell.alignment = align or Alignment(vertical='center')
 
         def set_kpi_cell(ws, r, col, val):
@@ -555,36 +565,46 @@ def export_monthly():
         def clear_kpi_cell(ws, r, col):
             set_cell(ws, r, col, '', align=center)
 
-        for i,c in enumerate(cases):
-            r=3+i; std=c.get('std','')
+        # o = column offset สำหรับ ALL_ZONE (มี column C=พื้นที่ เพิ่มมา 1)
+        o = 1 if include_area else 0
+
+        for i, c in enumerate(cases):
+            r = 3 + i
+            std = c.get('std','')
             is_cancelled = c.get('cancelled', False)
             close_date   = c.get('closeDate','')
+
             set_cell(ws, r,  1, c.get('seq') or (i+1))
-            set_cell(ws, r,  2, c.get('jobNo',''))
-            set_cell(ws, r,  3, c.get('sapNo',''))
-            set_cell(ws, r,  4, c.get('notifyTime',''),   align=center)
-            # col E = ตำแหน่ง/สถานที่ — ใช้ location อย่างเดียว (ไม่เติม area ซ้ำ)
-            set_cell(ws, r,  5, c.get('location',''),     align=wrap)
-            set_cell(ws, r,  6, c.get('problem',''),      align=wrap)
-            set_cell(ws, r,  7, c.get('kpiVal',''),       align=center)
-            set_cell(ws, r,  8, fmt_response_decimal(c.get('responseTime','')), align=center)
-            set_cell(ws, r,  9, c.get('approveTime',''),  align=center)
-            set_cell(ws, r, 10, c.get('arriveTime',''),   align=center)
-            set_cell(ws, r, 12, c.get('solution',''),     align=wrap)
-            set_cell(ws, r, 13, std,                      align=center)
-            set_cell(ws, r, 14, STD_HOURS.get(std,''),    align=center)
-            set_cell(ws, r, 15, c.get('closeTime',''),    align=center)
+            set_cell(ws, r,  2, c.get('date',''),                   align=center)   # B = วันที่
+            if include_area:
+                set_cell(ws, r, 3, c.get('area',''),                align=center)   # C = พื้นที่ (ALL_ZONE)
+            set_cell(ws, r,  3+o, c.get('jobNo',''))                                # C/D = Job No
+            set_cell(ws, r,  4+o, c.get('sapNo',''))                                # D/E = SAP No
+            set_cell(ws, r,  5+o, c.get('notifyTime',''),           align=center)   # E/F = เวลาแจ้ง
+            set_cell(ws, r,  6+o, c.get('location',''),             align=wrap)     # F/G = ตำแหน่ง
+            set_cell(ws, r,  7+o, c.get('problem',''),              align=wrap)     # G/H = ปัญหา
+            set_cell(ws, r,  8+o, c.get('kpiVal',''),               align=center)   # H/I = KPI Val
+            set_cell(ws, r,  9+o, fmt_response_decimal(c.get('responseTime','')), align=center)  # I/J = ตอบรับ
+            set_cell(ws, r, 10+o, c.get('approveTime',''),          align=center)   # J/K = อนุมัติ
+            set_cell(ws, r, 11+o, c.get('arriveTime',''),           align=center)   # K/L = ถึงหน้างาน
+            # L/M = KPI1 (set below)
+            set_cell(ws, r, 13+o, c.get('solution',''),             align=wrap)     # M/N = การแก้ไข
+            set_cell(ws, r, 14+o, std,                              align=center)   # N/O = std code
+            set_cell(ws, r, 15+o, STD_HOURS.get(std,''),           align=center)   # O/P = STD hrs
+            set_cell(ws, r, 16+o, c.get('closeTime',''),            align=center)   # P/Q = ปิดงาน
+            # Q/R = KPI2, R/S = KPI3, S/T = หมายเหตุ (set below)
+
             if is_cancelled:
-                clear_kpi_cell(ws, r, 11)
-                clear_kpi_cell(ws, r, 16)
-                clear_kpi_cell(ws, r, 17)
-                set_cell(ws, r, 18, 'ยกเลิกใบงาน')  # col R = หมายเหตุ
+                clear_kpi_cell(ws, r, 12+o)                              # KPI1
+                clear_kpi_cell(ws, r, 17+o)                              # KPI2
+                clear_kpi_cell(ws, r, 18+o)                              # KPI3
+                set_cell(ws, r, 19+o, 'ยกเลิกใบงาน')                    # หมายเหตุ
             else:
-                set_kpi_cell(ws, r, 11, c.get('kpi1'))
-                set_kpi_cell(ws, r, 16, _kpi2_export(c))
-                set_kpi_cell(ws, r, 17, c.get('kpi3'))
+                set_kpi_cell(ws, r, 12+o, c.get('kpi1'))
+                set_kpi_cell(ws, r, 17+o, _kpi2_export(c))
+                set_kpi_cell(ws, r, 18+o, c.get('kpi3'))
                 if close_date and close_date != c.get('date',''):
-                    set_cell(ws, r, 18, f'ปิดงานวันที่ {fmt_be(close_date)}')
+                    set_cell(ws, r, 19+o, f'ปิดงานวันที่ {fmt_be(close_date)}')
 
     for area in areas:
         cases = sorted([c for c in cases_all if c.get('area')==area],
@@ -594,7 +614,7 @@ def export_monthly():
 
     all_sorted = sorted([c for a in areas for c in area_cases[a]],
                         key=lambda c:(c.get('date',''), c.get('area',''), _seq_num(c)))
-    write_month_rows(wb['ALL_ZONE'], all_sorted)
+    write_month_rows(wb['ALL_ZONE'], all_sorted, include_area=True)
 
     ws_mc = wb['Month CM']
     ws_mc.cell(row=7,column=5).value = month_be
