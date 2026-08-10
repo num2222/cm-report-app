@@ -463,6 +463,75 @@ def _write_rows(ws, cases, start_row=8):
 
 
 
+def _inject_images(wb_bytes, tmpl_bytes):
+    """Copy media (images) และ drawing rels จาก template เข้าไปใน output
+    เพราะ openpyxl.save() ไม่ preserve images จาก template ที่โหลดมา
+    วิธีนี้: inject media files + แก้ drawing rels path + ลบ externalLinks
+    ทำให้ Logo แสดงทุก sheet โดยไม่ทำลาย formula/data
+    """
+    import zipfile, re as _re
+
+    # ดึง media และ drawing files จาก template
+    tmpl_extras = {}  # fname → bytes
+    with zipfile.ZipFile(io.BytesIO(tmpl_bytes), 'r') as tzf:
+        for fname in tzf.namelist():
+            if fname.startswith('xl/media/') or \
+               ('xl/drawings/' in fname and 'rels' in fname):
+                tmpl_extras[fname] = tzf.read(fname)
+
+    if not tmpl_extras:
+        buf = io.BytesIO(wb_bytes); buf.seek(0); return buf
+
+    out = io.BytesIO()
+    with zipfile.ZipFile(io.BytesIO(wb_bytes), 'r') as src:
+        with zipfile.ZipFile(out, 'w', zipfile.ZIP_DEFLATED) as dst:
+            existing = set(src.namelist())
+            for item in src.infolist():
+                fname = item.filename
+                data  = src.read(fname)
+
+                # ลบ externalLinks
+                if fname.startswith('xl/externalLinks') or fname == 'xl/calcChain.xml':
+                    continue
+
+                # แก้ drawing rels: absolute /xl/media/ → relative ../media/
+                if 'drawings/_rels/' in fname and fname.endswith('.rels'):
+                    text = data.decode('utf-8', errors='replace')
+                    text = text.replace('Target="/xl/media/', 'Target="../media/')
+                    data = text.encode('utf-8')
+
+                # แก้ workbook.xml.rels: ลบ externalLink
+                elif fname == 'xl/_rels/workbook.xml.rels':
+                    text = data.decode('utf-8', errors='replace')
+                    text = _re.sub(r'<Relationship[^>]*/>', lambda m: '' if 'externalLink' in m.group() else m.group(), text)
+                    data = text.encode('utf-8')
+
+                # แก้ workbook.xml: ลบ externalReferences
+                elif fname == 'xl/workbook.xml':
+                    text = data.decode('utf-8', errors='replace')
+                    text = _re.sub(r'<externalReferences[^>]*>.*?</externalReferences>', '', text, flags=_re.DOTALL)
+                    data = text.encode('utf-8')
+
+                # แก้ Content_Types: ลบ externalLink + เพิ่ม PNG
+                elif fname == '[Content_Types].xml':
+                    text = data.decode('utf-8', errors='replace')
+                    text = _re.sub(r'<Override[^>]*externalLink[^>]*/>', '', text)
+                    if 'Extension="png"' not in text:
+                        text = text.replace('<Default Extension="vml"',
+                            '<Default Extension="png" ContentType="image/png" /><Default Extension="vml"')
+                    data = text.encode('utf-8')
+
+                dst.writestr(item, data)
+
+            # inject media จาก template (เฉพาะที่ยังไม่มีใน output)
+            for fname, fdata in tmpl_extras.items():
+                if fname not in existing:
+                    dst.writestr(fname, fdata)
+
+    out.seek(0)
+    return out
+
+
 @app.route('/api/export/daily', methods=['POST'])
 @login_required
 def export_daily():
@@ -515,7 +584,8 @@ def export_daily():
     ws_cm.cell(row=40,column=4).value=k1f   # D40 KPI1 ไม่ผ่าน
     ws_cm.cell(row=38,column=10).value=k2p  # J38 KPI2 ผ่าน
     ws_cm.cell(row=40,column=10).value=k2f  # J40 KPI2 ไม่ผ่าน
-    out = io.BytesIO(); wb.save(out); out.seek(0)
+    out = io.BytesIO(); wb.save(out)
+    out = _inject_images(out.getvalue(), tmpl.read_bytes())
     return send_file(out, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
                      as_attachment=True, download_name=f'CM_Daily_{date_iso}.xlsx')
 
@@ -647,7 +717,8 @@ def export_monthly():
     ws_mc.cell(row=41,column=7).value=k2f;   ws_mc.cell(row=41,column=9).value=round(k2f/k2t*100,1)   # G41, I41
     ws_mc.cell(row=39,column=12).value=k3p;  ws_mc.cell(row=39,column=14).value=round(k3p/k3t*100,1)  # L39, N39
     ws_mc.cell(row=41,column=12).value=k3f;  ws_mc.cell(row=41,column=14).value=round(k3f/k3t*100,1)  # L41, N41
-    out = io.BytesIO(); wb.save(out); out.seek(0)
+    out = io.BytesIO(); wb.save(out)
+    out = _inject_images(out.getvalue(), tmpl.read_bytes())
     return send_file(out, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
                      as_attachment=True, download_name=f'CM_Monthly_{month}.xlsx')
 
