@@ -253,6 +253,7 @@ textarea.paste-box { width: 100%; height: 200px; font-family: 'Courier New', mon
     <select id="pending-area" onchange="renderPending()">
       <option value="ALL">ทุกพื้นที่</option><option value="MTB">MTB</option><option value="Z2">Z2</option><option value="FZ">FZ</option><option value="SAT1">SAT1</option>
     </select>
+    <button class="btn btn-success btn-sm" onclick="exportPendingExcel(event)">📊 Export Excel</button>
   </div>
   <div id="pending-content"></div>
 </div>
@@ -1125,6 +1126,38 @@ async function updatePendingReason(id, reason) {
     if(idx>=0) db[idx] = updated;
   } catch(e) {
     alert('บันทึกเหตุผลไม่สำเร็จ: ' + e.message);
+  }
+}
+
+async function exportPendingExcel(ev) {
+  const btn = ev?.target; const orig = btn?.textContent;
+  if(btn) { btn.textContent = '⏳ กำลัง Export...'; btn.disabled = true; }
+  try {
+    const month = document.getElementById('pending-month').value;
+    const area  = document.getElementById('pending-area').value;
+    // ดึงเคสค้างดำเนินการเหมือน renderPending
+    let cases = db.filter(c => !c.closeTime && c.kpi3 !== 'pass' && !c.cancelled);
+    if(month) cases = cases.filter(c => c.date && c.date.startsWith(month));
+    if(area !== 'ALL') cases = cases.filter(c => c.area === area);
+    cases.sort((a,b)=>(a.date+a.notifyTime).localeCompare(b.date+b.notifyTime));
+    if(!cases.length) { alert('ไม่มีข้อมูลค้างดำเนินการ'); return; }
+
+    const resp = await fetch('/api/export/pending', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({cases, filters:{month, area}})
+    });
+    if(!resp.ok) { const e=await resp.json(); throw new Error(e.error||resp.status); }
+    const blob = await resp.blob();
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    const dt = month || new Date().toISOString().slice(0,7);
+    a.download = `Pending_${dt}.xlsx`;
+    a.click();
+  } catch(e) {
+    alert('Export ไม่สำเร็จ: ' + e.message);
+  } finally {
+    if(btn) { btn.textContent = orig; btn.disabled = false; }
   }
 }
 
