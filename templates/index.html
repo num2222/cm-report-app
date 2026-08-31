@@ -807,8 +807,10 @@ function renderDashboard() {
 
   document.getElementById('dash-kpi').innerHTML = [['KPI1','ระยะเวลาตอบรับ'],['KPI2','ระยะเวลาดำเนินการ'],['KPI3','ดุลพินิจ']].map(([k,label])=>{
     const kkey = k.toLowerCase();
-    const pass=cases.filter(c=>c[kkey]==='pass').length;
-    const fail=cases.filter(c=>c[kkey]==='fail').length;
+    // KPI2 ใช้ kpi2Eff เพื่อนับเคสค้าง (ไม่มี closeTime) เป็น fail ด้วย
+    const effFn = (kkey === 'kpi2') ? kpi2Eff : (c => c[kkey]);
+    const pass=cases.filter(c=>effFn(c)==='pass').length;
+    const fail=cases.filter(c=>effFn(c)==='fail').length;
     const tot=pass+fail, pp=tot?Math.round(pass/tot*100):0;
     return `<div class="kpi-card"><h4>${k} — ${label}</h4>
       <div class="kpi-bar-wrap">
