@@ -596,12 +596,27 @@ function parseLine() {
 
   // ── solution: ต้อง match "การแก้ไข" แบบ exact word เพื่อไม่ให้ match กับ
   // "เวลาเริ่มการแก้ไข" หรือ "สาเหตุการแก้ไข" ฯลฯ
-  // ใช้ lookbehind (\n หรือ ^ ก่อน key) กัน partial match
+  // ดึงหลายบรรทัดได้ รวม "รายการอะไหล่" ที่ต่อท้าย
   function extractExact(key) {
+    // จับบรรทัดแรกหลัง key
     const re = new RegExp('(?:^|\\n)' + key + '[ \\t]*[:：][ \\t]*([^\\r\\n]*)', 'i');
     const m = txt.match(re);
-    if(m) return m[1].trim();
-    return '';
+    if(!m) return '';
+    let result = m[1].trim();
+    // หา index ของ match เพื่อดึงบรรทัดถัดๆ ไปที่ไม่ใช่ field ใหม่
+    const startIdx = txt.indexOf(m[0]) + m[0].length;
+    const remaining = txt.slice(startIdx);
+    // ดึงบรรทัดต่อไปจนกว่าจะเจอ field ใหม่ (มี : หรือ ： ตาม key)
+    // หรือเจอบรรทัดว่าง 2 บรรทัด
+    const lines = remaining.split(/\r?\n/);
+    for(const line of lines) {
+      const trimmed = line.trim();
+      if(!trimmed) continue;  // ข้ามบรรทัดว่าง
+      // หยุดถ้าเจอ field ใหม่ (บรรทัดที่มี : หรือ ： อยู่ด้วย และไม่ใช่ข้อความทั่วไป)
+      if(/^[^\n]{1,30}[ \t]*[:：]/.test(trimmed)) break;
+      result += ' ' + trimmed;
+    }
+    return result.trim();
   }
 
   const c = {
