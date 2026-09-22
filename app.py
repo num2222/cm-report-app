@@ -644,6 +644,86 @@ def export_monthly():
     return send_file(out, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
                      as_attachment=True, download_name=f'CM_Monthly_{month}.xlsx')
 
+@app.route('/api/export/cases', methods=['POST'])
+@login_required
+def export_cases():
+    """Export รายการเคส (ตามที่ filter) เป็น Excel"""
+    import openpyxl
+    from openpyxl.styles import Font, PatternFill, Alignment
+    d = request.get_json()
+    cases = d.get('cases', [])
+    filters = d.get('filters', {})
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = 'รายการเคส'
+
+    font_hdr  = Font(name='TH SarabunPSK', size=12, bold=True, color='FFFFFF')
+    font_data = Font(name='TH SarabunPSK', size=12)
+    fill_hdr  = PatternFill('solid', fgColor='1F3864')
+    fill_odd  = PatternFill('solid', fgColor='EEF2FF')
+    center = Alignment(horizontal='center', vertical='center', wrap_text=True)
+    left   = Alignment(vertical='center', wrap_text=True)
+
+    headers = ['พื้นที่','วันที่','ลำดับ','Job No.','SAP No.','เวลาแจ้ง',
+               'ตำแหน่ง / สถานที่','ปัญหา','การแก้ไข','ช่างผู้ซ่อม',
+               'KPI No.','ตอบรับ','มาตรฐาน','อนุมัติ','ถึงหน้างาน','เริ่มแก้ไข',
+               'ปิดงาน','KPI1','KPI2','KPI3','สถานะ','หมายเหตุ']
+    col_widths = [8,12,7,14,14,10,28,28,28,16,
+                  8,8,8,8,8,8,
+                  8,8,8,8,12,20]
+
+    for ci, h in enumerate(headers, 1):
+        cell = ws.cell(row=1, column=ci, value=h)
+        cell.font = font_hdr; cell.fill = fill_hdr; cell.alignment = center
+    ws.row_dimensions[1].height = 30
+
+    for ci, w in enumerate(col_widths, 1):
+        ws.column_dimensions[openpyxl.utils.get_column_letter(ci)].width = w
+
+    from datetime import date as _date
+    for i, c in enumerate(cases):
+        r = i + 2
+        fill = fill_odd if i % 2 == 0 else PatternFill()
+        cancelled = c.get('cancelled', False)
+        close_time = c.get('closeTime','')
+        if cancelled: status = 'ยกเลิก'
+        elif close_time: status = 'ปิดแล้ว'
+        else: status = 'ค้าง'
+
+        close_date = c.get('closeDate','') or ''
+        remark = 'ยกเลิกใบงาน' if cancelled else (
+            f"ปิดงานวันที่ {fmt_be(close_date)}" if close_date and close_date != c.get('date','') else '')
+
+        row_data = [
+            c.get('area',''), c.get('date',''), c.get('seq',''),
+            c.get('jobNo',''), c.get('sapNo',''), c.get('notifyTime',''),
+            c.get('location',''), c.get('problem',''), c.get('solution',''),
+            c.get('technician',''), c.get('kpiVal',''),
+            c.get('responseTime',''), c.get('std',''),
+            c.get('approveTime',''), c.get('arriveTime',''), c.get('startTime',''),
+            close_time,
+            kpi_sym('pass' if cancelled else c.get('kpi1','')),
+            kpi_sym('pass' if cancelled else _kpi2_export(c)),
+            kpi_sym('pass' if cancelled else c.get('kpi3','')),
+            status, remark,
+        ]
+        for ci, val in enumerate(row_data, 1):
+            cell = ws.cell(row=r, column=ci, value=val)
+            cell.font = font_data
+            cell.alignment = center if ci in (1,2,3,4,5,6,11,12,13,14,15,16,17,18,19,20,21) else left
+            if fill.fgColor.rgb != '00000000':
+                cell.fill = fill
+        ws.row_dimensions[r].height = 20
+
+    ws.freeze_panes = 'A2'
+    out = io.BytesIO(); wb.save(out); out.seek(0)
+    area = filters.get('area','ALL')
+    fname = f"Cases_{area}.xlsx"
+    return send_file(out, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                     as_attachment=True, download_name=fname)
+
+
 @app.route('/api/export/pending', methods=['POST'])
 @login_required
 def export_pending():
