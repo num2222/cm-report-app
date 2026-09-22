@@ -216,6 +216,13 @@ textarea.paste-box { width: 100%; height: 200px; font-family: 'Courier New', mon
     </select>
     <label>จากวันที่</label><input type="date" id="filter-from" onchange="renderCases()">
     <label>ถึงวันที่</label><input type="date" id="filter-to" onchange="renderCases()">
+    <label>KPI3</label>
+    <select id="filter-kpi3" onchange="renderCases()" style="padding:6px 8px;border:1px solid #ccd4de;border-radius:6px;font-size:13px;font-family:inherit;">
+      <option value="ALL">ทั้งหมด</option>
+      <option value="pass">✓ ผ่าน</option>
+      <option value="fail">✗ ไม่ผ่าน</option>
+      <option value="none">— ยังไม่ระบุ</option>
+    </select>
     <input type="text" id="filter-jobno" placeholder="🔍 ค้นหา Job No." oninput="renderCases()"
       style="padding:6px 10px;border:1px solid #ccd4de;border-radius:6px;font-size:13px;width:150px;font-family:inherit;">
     <button class="btn btn-outline btn-sm" onclick="clearFilters()">ล้าง</button>
@@ -864,11 +871,15 @@ function renderCases() {
   const area  = document.getElementById('filter-area').value;
   const from  = document.getElementById('filter-from').value;
   const to    = document.getElementById('filter-to').value;
+  const kpi3  = document.getElementById('filter-kpi3').value;
   const jobNo = (document.getElementById('filter-jobno').value || '').trim().toLowerCase();
   let cases = [...db];
   if(area !== 'ALL') cases = cases.filter(c => c.area === area);
   if(from) cases = cases.filter(c => c.date && c.date >= from);
   if(to)   cases = cases.filter(c => c.date && c.date <= to);
+  if(kpi3 === 'pass') cases = cases.filter(c => c.kpi3 === 'pass');
+  else if(kpi3 === 'fail') cases = cases.filter(c => c.kpi3 === 'fail');
+  else if(kpi3 === 'none') cases = cases.filter(c => !c.kpi3 || c.kpi3 === '');
   if(jobNo) cases = cases.filter(c => (c.jobNo||'').toLowerCase().includes(jobNo));
   // เรียงตามวันที่ (ใหม่สุดก่อน) แล้วตามด้วยลำดับเคสต่อวัน (seq) จากน้อยไปมาก
   cases.sort((a,b) => {
@@ -904,6 +915,7 @@ function clearFilters() {
   document.getElementById('filter-area').value = 'ALL';
   document.getElementById('filter-from').value = '';
   document.getElementById('filter-to').value = '';
+  document.getElementById('filter-kpi3').value = 'ALL';
   document.getElementById('filter-jobno').value = '';
   renderCases();
 }
