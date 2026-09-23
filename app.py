@@ -668,10 +668,10 @@ def export_cases():
     headers = ['พื้นที่','วันที่','ลำดับ','Job No.','SAP No.','เวลาแจ้ง',
                'ตำแหน่ง / สถานที่','ปัญหา','การแก้ไข','ช่างผู้ซ่อม',
                'KPI No.','ตอบรับ','มาตรฐาน','อนุมัติ','ถึงหน้างาน','เริ่มแก้ไข',
-               'ปิดงาน','KPI1','KPI2','KPI3','สถานะ','หมายเหตุ']
+               'ปิดงาน','KPI1','KPI2','KPI3','สถานะ','สถานะ SAP','หมายเหตุ']
     col_widths = [8,12,7,14,14,10,28,28,28,16,
                   8,8,8,8,8,8,
-                  8,8,8,8,12,20]
+                  8,8,8,8,12,16,20]
 
     for ci, h in enumerate(headers, 1):
         cell = ws.cell(row=1, column=ci, value=h)
@@ -680,6 +680,14 @@ def export_cases():
 
     for ci, w in enumerate(col_widths, 1):
         ws.column_dimensions[openpyxl.utils.get_column_letter(ci)].width = w
+
+    # map sapStatus → label ภาษาไทย
+    SAP_LABEL = {
+        'closed':  'ปิด SAP',
+        'pending': 'รอปิด SAP',
+        'failed':  'ปิด SAP ไม่สำเร็จ',
+        '':        'NON-SAP',
+    }
 
     from datetime import date as _date
     for i, c in enumerate(cases):
@@ -691,13 +699,21 @@ def export_cases():
         elif close_time: status = 'ปิดแล้ว'
         else: status = 'ค้าง'
 
+        # สถานะ SAP
+        sap_no = c.get('sapNo','') or ''
+        sap_st = c.get('sapStatus','') or ''
+        if not sap_no:
+            sap_label = 'NON-SAP'
+        else:
+            sap_label = SAP_LABEL.get(sap_st, 'รอปิด SAP')
+
         close_date = c.get('closeDate','') or ''
         remark = 'ยกเลิกใบงาน' if cancelled else (
             f"ปิดงานวันที่ {fmt_be(close_date)}" if close_date and close_date != c.get('date','') else '')
 
         row_data = [
             c.get('area',''), c.get('date',''), c.get('seq',''),
-            c.get('jobNo',''), c.get('sapNo',''), c.get('notifyTime',''),
+            c.get('jobNo',''), sap_no, c.get('notifyTime',''),
             c.get('location',''), c.get('problem',''), c.get('solution',''),
             c.get('technician',''), c.get('kpiVal',''),
             c.get('responseTime',''), c.get('std',''),
@@ -706,12 +722,12 @@ def export_cases():
             kpi_sym('pass' if cancelled else c.get('kpi1','')),
             kpi_sym('pass' if cancelled else _kpi2_export(c)),
             kpi_sym('pass' if cancelled else c.get('kpi3','')),
-            status, remark,
+            status, sap_label, remark,
         ]
         for ci, val in enumerate(row_data, 1):
             cell = ws.cell(row=r, column=ci, value=val)
             cell.font = font_data
-            cell.alignment = center if ci in (1,2,3,4,5,6,11,12,13,14,15,16,17,18,19,20,21) else left
+            cell.alignment = center if ci in (1,2,3,4,5,6,11,12,13,14,15,16,17,18,19,20,21,22) else left
             if fill.fgColor.rgb != '00000000':
                 cell.fill = fill
         ws.row_dimensions[r].height = 20
