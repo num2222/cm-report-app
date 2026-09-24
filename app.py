@@ -150,6 +150,12 @@ def _kpi2_export(c):
     if not c.get('closeTime'): return 'fail'
     return c.get('kpi2', '')
 
+def _kpi1_export(c):
+    """KPI1 สำหรับ export: ยกเลิก=pass, ไม่มีเวลาถึงหน้างาน=fail"""
+    if _is_cancelled(c): return 'pass'
+    if not c.get('arriveTime'): return 'fail'
+    return c.get('kpi1', '')
+
 def _kpi_export(c, key):
     """KPI1/KPI3 สำหรับ export: ถ้ายกเลิกใบงาน → pass"""
     if _is_cancelled(c): return 'pass'
@@ -436,7 +442,7 @@ def _write_rows(ws, cases, start_row=8):
         set_cell(ws, r, 10, c.get('arriveTime',''),    align=center)
 
         # KPI1 — ยกเลิกใบงาน = pass (✓)
-        kpi1_val = 'pass' if is_cancelled else c.get('kpi1')
+        kpi1_val = _kpi1_export(c)
         set_cell(ws, r, 11, kpi_sym(kpi1_val),
                  font=kpi_font if kpi1_val=='pass' else kpi_font_fail,
                  align=center)
@@ -500,8 +506,8 @@ def export_daily():
         ws_cm.cell(row=r2,column=10).value=len(ad)
         ws_cm.cell(row=r3,column=10).value=len(ac)-len(ad)
     # KPI1: นับรวมเคสที่ยกเลิกใบงานเป็น pass ด้วย
-    k1p=sum(1 for c in all_c if c.get('kpi1')=='pass' or c.get('cancelled'))
-    k1f=sum(1 for c in all_c if c.get('kpi1')=='fail' and not c.get('cancelled'))
+    k1p=sum(1 for c in all_c if _kpi1_export(c)=='pass')
+    k1f=sum(1 for c in all_c if _kpi1_export(c)=='fail')
     # KPI2: ไม่มีเวลาปิดงาน = ไม่ผ่าน (ยกเว้นเคสที่ยกเลิกใบงาน = pass)
     k2p=sum(1 for c in all_c if _kpi2_export(c)=='pass')
     k2f=sum(1 for c in all_c if _kpi2_export(c)=='fail')
@@ -596,7 +602,7 @@ def export_monthly():
                 set_kpi_cell(ws, r, 18+o, 'pass')    # KPI3 = pass
                 set_cell(ws, r, 19+o, 'ยกเลิกใบงาน') # หมายเหตุ
             else:
-                set_kpi_cell(ws, r, 12+o, c.get('kpi1'))
+                set_kpi_cell(ws, r, 12+o, _kpi1_export(c))
                 set_kpi_cell(ws, r, 17+o, _kpi2_export(c))
                 set_kpi_cell(ws, r, 18+o, c.get('kpi3'))
                 if close_date and close_date != c.get('date',''):
