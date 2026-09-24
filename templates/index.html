@@ -230,6 +230,14 @@ textarea.paste-box { width: 100%; height: 200px; font-family: 'Courier New', mon
       <option value="pending">ค้าง</option>
       <option value="cancelled">ยกเลิก</option>
     </select>
+    <label>SAP</label>
+    <select id="filter-sap-status" onchange="renderCases()" style="padding:6px 8px;border:1px solid #ccd4de;border-radius:6px;font-size:13px;font-family:inherit;">
+      <option value="ALL">ทุกสถานะ</option>
+      <option value="pending">รอปิด SAP</option>
+      <option value="closed">ปิด SAP</option>
+      <option value="failed">ปิด SAP ไม่สำเร็จ</option>
+      <option value="nosap">NON-SAP</option>
+    </select>
     <input type="text" id="filter-jobno" placeholder="🔍 ค้นหา Job No." oninput="renderCases()"
       style="padding:6px 10px;border:1px solid #ccd4de;border-radius:6px;font-size:13px;width:150px;font-family:inherit;">
     <button class="btn btn-outline btn-sm" onclick="clearFilters()">ล้าง</button>
@@ -239,7 +247,7 @@ textarea.paste-box { width: 100%; height: 200px; font-family: 'Courier New', mon
   <div class="card" style="padding:0;overflow:hidden;">
     <div class="tbl-wrap">
       <table>
-        <thead><tr><th>พื้นที่</th><th>วันที่</th><th>ลำดับ</th><th>Job No.</th><th>SAP No.</th><th>เวลาแจ้ง</th><th>บริเวณ</th><th>ปัญหา</th><th>KPI1</th><th>KPI2</th><th>KPI3</th><th>ปิดงาน</th><th>จัดการ</th></tr></thead>
+        <thead><tr><th>พื้นที่</th><th>วันที่</th><th>ลำดับ</th><th>Job No.</th><th>SAP No.</th><th>เวลาแจ้ง</th><th>บริเวณ</th><th>ปัญหา</th><th>KPI1</th><th>KPI2</th><th>KPI3</th><th>ปิดงาน</th><th>SAP</th><th>จัดการ</th></tr></thead>
         <tbody id="cases-tbody"></tbody>
       </table>
     </div>
@@ -498,6 +506,14 @@ function calcKPI1(notifyTime, arriveTime, responseTime, approveTime) {
 }
 
 // KPI2: เวลาปิดงาน - เวลาเริ่มการแก้ไข ไม่เกินมาตรฐาน
+// kpi1Eff: KPI1 ที่ถูกต้องสำหรับ Dashboard/Summary
+// ถ้าไม่มีเวลาถึงหน้างาน = ไม่ผ่าน KPI1
+function kpi1Eff(c) {
+  if(c.cancelled) return 'pass';
+  if(!c.arriveTime) return 'fail';
+  return c.kpi1 || '';
+}
+
 // kpi2Eff: KPI2 ที่ถูกต้องสำหรับ Dashboard
 // ถ้าไม่มีเวลาปิดงาน = ยังไม่แล้วเสร็จ = ไม่ผ่าน KPI2 เสมอ
 function kpi2Eff(c) {
@@ -892,6 +908,9 @@ function renderCases() {
   if(close === 'done')      cases = cases.filter(c => c.closeTime && !c.cancelled);
   else if(close === 'pending')   cases = cases.filter(c => !c.closeTime && !c.cancelled);
   else if(close === 'cancelled') cases = cases.filter(c => c.cancelled);
+  const sapSt = document.getElementById('filter-sap-status').value;
+  if(sapSt === 'nosap') cases = cases.filter(c => !c.sapNo);
+  else if(sapSt !== 'ALL') cases = cases.filter(c => c.sapNo && (c.sapStatus||'pending') === sapSt);
   if(jobNo) cases = cases.filter(c => (c.jobNo||'').toLowerCase().includes(jobNo));
   // เรียงตามวันที่ (ใหม่สุดก่อน) แล้วตามด้วยลำดับเคสต่อวัน (seq) จากน้อยไปมาก
   cases.sort((a,b) => {
@@ -917,6 +936,13 @@ function renderCases() {
     <td>${badgeKPI(c.kpi2)}</td>
     <td>${badgeKPI(c.kpi3)}</td>
     <td>${c.cancelled ? '<span class="badge" style="background:#ffeeba;color:#856404;">ยกเลิก</span>' : c.closeTime?`<span class="badge badge-pass">${c.closeTime}</span>`:'<span class="badge badge-pending">ค้าง</span>'}</td>
+    <td>${(()=>{
+      const sno=c.sapNo||'', st=c.sapStatus||'';
+      if(!sno) return '<span class="badge badge-na">NON-SAP</span>';
+      if(st==='closed') return '<span class="badge badge-pass">ปิด SAP</span>';
+      if(st==='failed') return '<span class="badge badge-fail">ไม่สำเร็จ</span>';
+      return '<span class="badge badge-pending">รอปิด SAP</span>';
+    })()}</td>
     <td style="white-space:nowrap;">
       <button class="btn btn-outline btn-sm" onclick="openEdit('${c.id}')">✏️</button>
       <button class="btn btn-danger btn-sm" onclick="deleteCase('${c.id}')">🗑</button>
@@ -929,6 +955,7 @@ function clearFilters() {
   document.getElementById('filter-to').value = '';
   document.getElementById('filter-kpi3').value = 'ALL';
   document.getElementById('filter-close').value = 'ALL';
+  document.getElementById('filter-sap-status').value = 'ALL';
   document.getElementById('filter-jobno').value = '';
   renderCases();
 }
@@ -1032,11 +1059,13 @@ function renderSummary() {
   let cases = db.filter(c => c.date && c.date.startsWith(month));
   if(area !== 'ALL') cases = cases.filter(c => c.area === area);
   const [yr,mo] = month.split('-');
-  const total=cases.length, done=cases.filter(c=>c.closeTime).length;
+  const total=cases.length;
+  // เสร็จแล้ว = ปิดงาน + ยกเลิก (ยกเลิกถือว่าเสร็จ ไม่ค้าง)
+  const done=cases.filter(c=>c.closeTime || c.cancelled).length;
   const pending=cases.filter(c=>!c.closeTime && !c.cancelled).length;
-  const k1p=cases.filter(c=>c.kpi1==='pass').length, k1t=cases.filter(c=>c.kpi1).length;
+  const k1p=cases.filter(c=>kpi1Eff(c)==='pass').length, k1t=cases.filter(c=>kpi1Eff(c)).length;
   const k2p=cases.filter(c=>kpi2Eff(c)==='pass').length, k2t=cases.filter(c=>kpi2Eff(c)).length;
-  const k3p=cases.filter(c=>c.kpi3==='pass').length, k3t=cases.filter(c=>c.kpi3).length;
+  const k3p=cases.filter(c=>c.kpi3==='pass' || c.cancelled).length, k3t=cases.filter(c=>c.kpi3||c.cancelled).length;
   let html=`<div class="card"><div class="section-title">สรุปเดือน ${mo}/${parseInt(yr)+543} — ${area==='ALL'?'ทุกพื้นที่':area}</div>
   <div class="stats-grid" style="margin-bottom:14px;">
     <div class="stat"><div class="stat-num">${total}</div><div class="stat-label">งานทั้งหมด</div></div>
@@ -1049,7 +1078,8 @@ function renderSummary() {
   if(area==='ALL'){
     html+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px;">';
     ['MTB','Z2','FZ','SAT1'].forEach(a=>{
-      const ac=cases.filter(c=>c.area===a), ad=ac.filter(c=>c.closeTime).length;
+      const ac=cases.filter(c=>c.area===a);
+      const ad=ac.filter(c=>c.closeTime || c.cancelled).length;
       const apending=ac.filter(c=>!c.closeTime && !c.cancelled).length;
       const ak1p=ac.filter(c=>c.kpi1==='pass').length, ak1t=ac.filter(c=>c.kpi1).length;
       const ak2p=ac.filter(c=>kpi2Eff(c)==='pass').length, ak2t=ac.filter(c=>kpi2Eff(c)).length;
@@ -1074,13 +1104,15 @@ function renderSummary() {
     html+=`<div class="section-title">รายวัน</div><div class="tbl-wrap"><table>
     <thead><tr><th>วันที่</th><th>ทั้งหมด</th><th>เสร็จ</th><th>ค้าง</th><th>KPI1 ผ่าน</th><th>KPI2 ผ่าน</th><th>KPI3 ผ่าน</th></tr></thead>
     <tbody>${days.map(d=>{
-      const dc=cases.filter(c=>c.date===d), dd=dc.filter(c=>c.closeTime).length;
-      const dk1p=dc.filter(c=>c.kpi1==='pass').length, dk1t=dc.filter(c=>c.kpi1).length;
+      const dc=cases.filter(c=>c.date===d);
+      const dd=dc.filter(c=>c.closeTime || c.cancelled).length;
+      const dpending=dc.filter(c=>!c.closeTime && !c.cancelled).length;
+      const dk1p=dc.filter(c=>kpi1Eff(c)==='pass').length, dk1t=dc.filter(c=>kpi1Eff(c)).length;
       const dk2p=dc.filter(c=>kpi2Eff(c)==='pass').length, dk2t=dc.filter(c=>kpi2Eff(c)).length;
-      const dk3p=dc.filter(c=>c.kpi3==='pass').length, dk3t=dc.filter(c=>c.kpi3).length;
+      const dk3p=dc.filter(c=>c.kpi3==='pass'||c.cancelled).length, dk3t=dc.filter(c=>c.kpi3||c.cancelled).length;
       return `<tr><td>${fmtDate(d)}</td><td>${dc.length}</td>
         <td style="color:#1e7e4a;">${dd}</td>
-        <td style="color:#d97706;">${dc.length-dd}</td>
+        <td style="color:#d97706;">${dpending}</td>
         <td>${dk1p}/${dk1t} (${pct(dk1p,dk1t)}%)</td>
         <td>${dk2p}/${dk2t} (${pct(dk2p,dk2t)}%)</td>
         <td>${dk3p}/${dk3t} (${pct(dk3p,dk3t)}%)</td></tr>`;
