@@ -14,7 +14,9 @@ app = Flask(__name__)
 
 DATABASE_URL = os.environ.get('DATABASE_URL', 'sqlite:///cm_local.db')
 if DATABASE_URL.startswith('postgres://'):
-    DATABASE_URL = DATABASE_URL.replace('postgres://', 'postgresql://', 1)
+    DATABASE_URL = DATABASE_URL.replace('postgres://', 'postgresql+psycopg2://', 1)
+elif DATABASE_URL.startswith('postgresql://') and 'psycopg2' not in DATABASE_URL:
+    DATABASE_URL = DATABASE_URL.replace('postgresql://', 'postgresql+psycopg2://', 1)
 
 app.config['SQLALCHEMY_DATABASE_URI'] = DATABASE_URL
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
@@ -143,22 +145,16 @@ def _is_cancelled(c):
 
 def _kpi2_export(c):
     """KPI2 สำหรับ export Excel:
-    - ยกเลิกใบงาน → pass (ผ่านทั้งหมด)
+    - ยกเลิกใบงาน → '' (ไม่แสดงผล KPI)
     - ไม่มีเวลาปิดงาน → fail เสมอ (ยังไม่เสร็จ)
     - มีเวลาปิดงาน → ใช้ค่า kpi2 จริง"""
-    if _is_cancelled(c): return 'pass'
+    if _is_cancelled(c): return ''
     if not c.get('closeTime'): return 'fail'
     return c.get('kpi2', '')
 
-def _kpi1_export(c):
-    """KPI1 สำหรับ export: ยกเลิก=pass, ไม่มีเวลาถึงหน้างาน=fail"""
-    if _is_cancelled(c): return 'pass'
-    if not c.get('arriveTime'): return 'fail'
-    return c.get('kpi1', '')
-
 def _kpi_export(c, key):
-    """KPI1/KPI3 สำหรับ export: ถ้ายกเลิกใบงาน → pass"""
-    if _is_cancelled(c): return 'pass'
+    """KPI1/KPI3 สำหรับ export: ถ้ายกเลิกใบงาน → '' (ไม่แสดง)"""
+    if _is_cancelled(c): return ''
     return c.get(key, '')
 
 STD_LABELS = {'A':'5-30 นาที','B':'1-3 ชม.','C':'3 ชม.-1 วัน','D':'1-7 วัน','E':'7-14 วัน','F':'1 เดือน'}
@@ -441,29 +437,57 @@ def _write_rows(ws, cases, start_row=8):
         set_cell(ws, r,  9, c.get('approveTime',''),   align=center)
         set_cell(ws, r, 10, c.get('arriveTime',''),    align=center)
 
-        # KPI1 — ยกเลิกใบงาน = pass (✓)
-        kpi1_val = _kpi1_export(c)
-        set_cell(ws, r, 11, kpi_sym(kpi1_val),
-                 font=kpi_font if kpi1_val=='pass' else kpi_font_fail,
-                 align=center)
+        if is_cancelled:
+            set_cell(ws, r, 11, '', align=center)
+        else:
+            kpi1_val = c.get('kpi1')
+            set_cell(ws, r, 11, kpi_sym(kpi1_val),
+                     font=kpi_font if kpi1_val=='pass' else kpi_font_fail,
+                     align=center)
 
         set_cell(ws, r, 12, c.get('solution',''),      align=wrap)
         set_cell(ws, r, 13, std,                       align=center)
         set_cell(ws, r, 14, STD_HOURS.get(std,''),     align=center)
         set_cell(ws, r, 15, c.get('closeTime',''),     align=center)
 
-        # KPI2 — ยกเลิกใบงาน = pass (✓), col Q = หมายเหตุ
+        # col Q = หมายเหตุ
         close_date = c.get('closeDate','')
-        kpi2_val = _kpi2_export(c)  # คืน 'pass' ถ้า cancelled
-        set_cell(ws, r, 16, kpi_sym(kpi2_val),
-                 font=kpi_font if kpi2_val=='pass' else kpi_font_fail,
-                 align=center)
         if is_cancelled:
+            set_cell(ws, r, 16, '', align=center)
             set_cell(ws, r, 17, 'ยกเลิกใบงาน')
-        elif close_date and close_date != c.get('date',''):
-            set_cell(ws, r, 17, f'ปิดงานวันที่ {fmt_be(close_date)}')
+        else:
+            kpi2_val = _kpi2_export(c)
+            set_cell(ws, r, 16, kpi_sym(kpi2_val),
+                     font=kpi_font if kpi2_val=='pass' else kpi_font_fail,
+                     align=center)
+            if close_date and close_date != c.get('date',''):
+                set_cell(ws, r, 17, f'ปิดงานวันที่ {fmt_be(close_date)}')
 
 
+def _add_logo_to_wb(wb, tmpl_bytes):
+    """สกัด Logo จาก template แล้ว re-insert ลงทุก sheet
+    ใช้ zipfile อ่านโดยตรงจาก xl/media/ เพราะ openpyxl._data() อาจ fail เงียบๆ"""
+    import zipfile
+    from openpyxl.drawing.image import Image as XLImage
+    try:
+        logo_bytes = None
+        with zipfile.ZipFile(io.BytesIO(tmpl_bytes), 'r') as zf:
+            media = sorted([n for n in zf.namelist() if n.startswith('xl/media/')])
+            if not media:
+                app.logger.warning("No media files in template — logo skipped")
+                return
+            logo_bytes = zf.read(media[0])
+            app.logger.info(f"Logo extracted via zipfile: {media[0]} ({len(logo_bytes)} bytes)")
+        for sn in wb.sheetnames:
+            ws = wb[sn]
+            ws._images = []
+            img = XLImage(io.BytesIO(logo_bytes))
+            img.anchor = 'A1'
+            img.width  = 520
+            img.height = 160
+            ws.add_image(img)
+    except Exception as e:
+        app.logger.warning(f"Logo insert failed: {e}")
 
 @app.route('/api/export/daily', methods=['POST'])
 @login_required
@@ -505,18 +529,19 @@ def export_daily():
         ws_cm.cell(row=r1,column=10).value=len(ac)
         ws_cm.cell(row=r2,column=10).value=len(ad)
         ws_cm.cell(row=r3,column=10).value=len(ac)-len(ad)
-    # KPI1: นับรวมเคสที่ยกเลิกใบงานเป็น pass ด้วย
-    k1p=sum(1 for c in all_c if _kpi1_export(c)=='pass')
-    k1f=sum(1 for c in all_c if _kpi1_export(c)=='fail')
-    # KPI2: ไม่มีเวลาปิดงาน = ไม่ผ่าน (ยกเว้นเคสที่ยกเลิกใบงาน = pass)
-    k2p=sum(1 for c in all_c if _kpi2_export(c)=='pass')
-    k2f=sum(1 for c in all_c if _kpi2_export(c)=='fail')
+    # KPI1: นับเฉพาะเคสที่ไม่ได้ยกเลิกใบงาน
+    k1p=sum(1 for c in all_c if c.get('kpi1')=='pass' and not c.get('cancelled'))
+    k1f=sum(1 for c in all_c if c.get('kpi1')=='fail' and not c.get('cancelled'))
+    # KPI2: ไม่มีเวลาปิดงาน = ไม่ผ่าน (ยกเว้นเคสที่ยกเลิกใบงาน)
+    k2p=sum(1 for c in all_c if _kpi2_export(c)=='pass' and not c.get('cancelled'))
+    k2f=sum(1 for c in all_c if _kpi2_export(c)=='fail' and not c.get('cancelled'))
     # Daily CM: D38=KPI1 pass, D40=KPI1 fail, J38=KPI2 pass, J40=KPI2 fail
     # F38, L38, F40, L40 เป็น formula ใน template คำนวณ % อัตโนมัติ ไม่ต้องเขียน
     ws_cm.cell(row=38,column=4).value=k1p   # D38 KPI1 ผ่าน
     ws_cm.cell(row=40,column=4).value=k1f   # D40 KPI1 ไม่ผ่าน
     ws_cm.cell(row=38,column=10).value=k2p  # J38 KPI2 ผ่าน
     ws_cm.cell(row=40,column=10).value=k2f  # J40 KPI2 ไม่ผ่าน
+    _add_logo_to_wb(wb, tmpl.read_bytes())
     out = io.BytesIO(); wb.save(out); out.seek(0)
     return send_file(out, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
                      as_attachment=True, download_name=f'CM_Daily_{date_iso}.xlsx')
@@ -537,27 +562,17 @@ def export_monthly():
     areas = ['MTB','Z2','FZ','SAT1']
     area_cases = {}
 
-    def write_month_rows(ws, cases, include_area=False):
-        """Layout ใหม่ MTB/Z2/FZ/SAT1:
-          A=No, B=วันที่, C=Job No, D=SAP No, E=เวลาแจ้ง, F=ตำแหน่ง, G=ปัญหา
-          H=KPI Val, I=ตอบรับ, J=อนุมัติ, K=ถึงหน้างาน, L=KPI1
-          M=การแก้ไข, N=std code, O=STD hrs, P=ปิดงาน, Q=KPI2, R=KPI3, S=หมายเหตุ
-
-        Layout ใหม่ ALL_ZONE (include_area=True):
-          A=No, B=วันที่, C=พื้นที่, D=Job No, E=SAP No, F=เวลาแจ้ง
-          G=ตำแหน่ง, H=ปัญหา, I=KPI Val, J=ตอบรับ, K=อนุมัติ, L=ถึงหน้างาน, M=KPI1
-          N=การแก้ไข, O=std code, P=STD hrs, Q=ปิดงาน, R=KPI2, S=KPI3, T=หมายเหตุ
-        """
+    def write_month_rows(ws, cases):
         from openpyxl.styles import Font, Alignment
         data_font     = Font(name='TH SarabunPSK', size=12)
-        kpi_font_pass = Font(name='TH SarabunPSK', size=10, bold=False, color='000000')
-        kpi_font_fail = Font(name='TH SarabunPSK', size=10, bold=False, color='000000')
+        kpi_font_pass = Font(name='TH SarabunPSK', size=10, bold=False, color='000000')  # สีดำ บาง
+        kpi_font_fail = Font(name='TH SarabunPSK', size=10, bold=False, color='000000')  # สีดำ บาง
         center = Alignment(horizontal='center', vertical='center')
         wrap   = Alignment(wrap_text=True, vertical='center')
 
         def set_cell(ws, r, col, value, font=None, align=None):
             cell = ws.cell(row=r, column=col, value=value)
-            cell.font      = font or data_font
+            cell.font      = font  or data_font
             cell.alignment = align or Alignment(vertical='center')
 
         def set_kpi_cell(ws, r, col, val):
@@ -567,46 +582,36 @@ def export_monthly():
         def clear_kpi_cell(ws, r, col):
             set_cell(ws, r, col, '', align=center)
 
-        # o = column offset สำหรับ ALL_ZONE (มี column C=พื้นที่ เพิ่มมา 1)
-        o = 1 if include_area else 0
-
-        for i, c in enumerate(cases):
-            r = 3 + i
-            std = c.get('std','')
+        for i,c in enumerate(cases):
+            r=3+i; std=c.get('std','')
             is_cancelled = c.get('cancelled', False)
             close_date   = c.get('closeDate','')
-
             set_cell(ws, r,  1, c.get('seq') or (i+1))
-            set_cell(ws, r,  2, c.get('date',''),                   align=center)   # B = วันที่
-            if include_area:
-                set_cell(ws, r, 3, c.get('area',''),                align=center)   # C = พื้นที่ (ALL_ZONE)
-            set_cell(ws, r,  3+o, c.get('jobNo',''))                                # C/D = Job No
-            set_cell(ws, r,  4+o, c.get('sapNo',''))                                # D/E = SAP No
-            set_cell(ws, r,  5+o, c.get('notifyTime',''),           align=center)   # E/F = เวลาแจ้ง
-            set_cell(ws, r,  6+o, c.get('location',''),             align=wrap)     # F/G = ตำแหน่ง
-            set_cell(ws, r,  7+o, c.get('problem',''),              align=wrap)     # G/H = ปัญหา
-            set_cell(ws, r,  8+o, c.get('kpiVal',''),               align=center)   # H/I = KPI Val
-            set_cell(ws, r,  9+o, fmt_response_decimal(c.get('responseTime','')), align=center)  # I/J = ตอบรับ
-            set_cell(ws, r, 10+o, c.get('approveTime',''),          align=center)   # J/K = อนุมัติ
-            set_cell(ws, r, 11+o, c.get('arriveTime',''),           align=center)   # K/L = ถึงหน้างาน
-            # L/M = KPI1 (set below)
-            set_cell(ws, r, 13+o, c.get('solution',''),             align=wrap)     # M/N = การแก้ไข
-            set_cell(ws, r, 14+o, std,                              align=center)   # N/O = std code
-            set_cell(ws, r, 15+o, STD_HOURS.get(std,''),           align=center)   # O/P = STD hrs
-            set_cell(ws, r, 16+o, c.get('closeTime',''),            align=center)   # P/Q = ปิดงาน
-            # Q/R = KPI2, R/S = KPI3, S/T = หมายเหตุ (set below)
-
+            set_cell(ws, r,  2, c.get('jobNo',''))
+            set_cell(ws, r,  3, c.get('sapNo',''))
+            set_cell(ws, r,  4, c.get('notifyTime',''),   align=center)
+            # col E = ตำแหน่ง/สถานที่ — ใช้ location อย่างเดียว (ไม่เติม area ซ้ำ)
+            set_cell(ws, r,  5, c.get('location',''),     align=wrap)
+            set_cell(ws, r,  6, c.get('problem',''),      align=wrap)
+            set_cell(ws, r,  7, c.get('kpiVal',''),       align=center)
+            set_cell(ws, r,  8, fmt_response_decimal(c.get('responseTime','')), align=center)
+            set_cell(ws, r,  9, c.get('approveTime',''),  align=center)
+            set_cell(ws, r, 10, c.get('arriveTime',''),   align=center)
+            set_cell(ws, r, 12, c.get('solution',''),     align=wrap)
+            set_cell(ws, r, 13, std,                      align=center)
+            set_cell(ws, r, 14, STD_HOURS.get(std,''),    align=center)
+            set_cell(ws, r, 15, c.get('closeTime',''),    align=center)
             if is_cancelled:
-                set_kpi_cell(ws, r, 12+o, 'pass')    # KPI1 = pass
-                set_kpi_cell(ws, r, 17+o, 'pass')    # KPI2 = pass
-                set_kpi_cell(ws, r, 18+o, 'pass')    # KPI3 = pass
-                set_cell(ws, r, 19+o, 'ยกเลิกใบงาน') # หมายเหตุ
+                clear_kpi_cell(ws, r, 11)
+                clear_kpi_cell(ws, r, 16)
+                clear_kpi_cell(ws, r, 17)
+                set_cell(ws, r, 18, 'ยกเลิกใบงาน')  # col R = หมายเหตุ
             else:
-                set_kpi_cell(ws, r, 12+o, _kpi1_export(c))
-                set_kpi_cell(ws, r, 17+o, _kpi2_export(c))
-                set_kpi_cell(ws, r, 18+o, c.get('kpi3'))
+                set_kpi_cell(ws, r, 11, c.get('kpi1'))
+                set_kpi_cell(ws, r, 16, _kpi2_export(c))
+                set_kpi_cell(ws, r, 17, c.get('kpi3'))
                 if close_date and close_date != c.get('date',''):
-                    set_cell(ws, r, 19+o, f'ปิดงานวันที่ {fmt_be(close_date)}')
+                    set_cell(ws, r, 18, f'ปิดงานวันที่ {fmt_be(close_date)}')
 
     for area in areas:
         cases = sorted([c for c in cases_all if c.get('area')==area],
@@ -616,7 +621,7 @@ def export_monthly():
 
     all_sorted = sorted([c for a in areas for c in area_cases[a]],
                         key=lambda c:(c.get('date',''), c.get('area',''), _seq_num(c)))
-    write_month_rows(wb['ALL_ZONE'], all_sorted, include_area=True)
+    write_month_rows(wb['ALL_ZONE'], all_sorted)
 
     ws_mc = wb['Month CM']
     ws_mc.cell(row=7,column=5).value = month_be
@@ -646,185 +651,10 @@ def export_monthly():
     ws_mc.cell(row=41,column=7).value=k2f;   ws_mc.cell(row=41,column=9).value=round(k2f/k2t*100,1)   # G41, I41
     ws_mc.cell(row=39,column=12).value=k3p;  ws_mc.cell(row=39,column=14).value=round(k3p/k3t*100,1)  # L39, N39
     ws_mc.cell(row=41,column=12).value=k3f;  ws_mc.cell(row=41,column=14).value=round(k3f/k3t*100,1)  # L41, N41
+    _add_logo_to_wb(wb, tmpl.read_bytes())
     out = io.BytesIO(); wb.save(out); out.seek(0)
     return send_file(out, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
                      as_attachment=True, download_name=f'CM_Monthly_{month}.xlsx')
-
-@app.route('/api/export/cases', methods=['POST'])
-@login_required
-def export_cases():
-    """Export รายการเคส (ตามที่ filter) เป็น Excel"""
-    import openpyxl
-    from openpyxl.styles import Font, PatternFill, Alignment
-    d = request.get_json()
-    cases = d.get('cases', [])
-    filters = d.get('filters', {})
-
-    wb = openpyxl.Workbook()
-    ws = wb.active
-    ws.title = 'รายการเคส'
-
-    font_hdr  = Font(name='TH SarabunPSK', size=12, bold=True, color='FFFFFF')
-    font_data = Font(name='TH SarabunPSK', size=12)
-    fill_hdr  = PatternFill('solid', fgColor='1F3864')
-    fill_odd  = PatternFill('solid', fgColor='EEF2FF')
-    center = Alignment(horizontal='center', vertical='center', wrap_text=True)
-    left   = Alignment(vertical='center', wrap_text=True)
-
-    headers = ['พื้นที่','วันที่','ลำดับ','Job No.','SAP No.','เวลาแจ้ง',
-               'ตำแหน่ง / สถานที่','ปัญหา','การแก้ไข','ช่างผู้ซ่อม',
-               'KPI No.','ตอบรับ','มาตรฐาน','อนุมัติ','ถึงหน้างาน','เริ่มแก้ไข',
-               'ปิดงาน','KPI1','KPI2','KPI3','สถานะ','สถานะ SAP','หมายเหตุ']
-    col_widths = [8,12,7,14,14,10,28,28,28,16,
-                  8,8,8,8,8,8,
-                  8,8,8,8,12,16,20]
-
-    for ci, h in enumerate(headers, 1):
-        cell = ws.cell(row=1, column=ci, value=h)
-        cell.font = font_hdr; cell.fill = fill_hdr; cell.alignment = center
-    ws.row_dimensions[1].height = 30
-
-    for ci, w in enumerate(col_widths, 1):
-        ws.column_dimensions[openpyxl.utils.get_column_letter(ci)].width = w
-
-    # map sapStatus → label ภาษาไทย
-    SAP_LABEL = {
-        'closed':  'ปิด SAP',
-        'pending': 'รอปิด SAP',
-        'failed':  'ปิด SAP ไม่สำเร็จ',
-        '':        'NON-SAP',
-    }
-
-    from datetime import date as _date
-    for i, c in enumerate(cases):
-        r = i + 2
-        fill = fill_odd if i % 2 == 0 else PatternFill()
-        cancelled = c.get('cancelled', False)
-        close_time = c.get('closeTime','')
-        if cancelled: status = 'ยกเลิก'
-        elif close_time: status = 'ปิดแล้ว'
-        else: status = 'ค้าง'
-
-        # สถานะ SAP
-        sap_no = c.get('sapNo','') or ''
-        sap_st = c.get('sapStatus','') or ''
-        if not sap_no:
-            sap_label = 'NON-SAP'
-        else:
-            sap_label = SAP_LABEL.get(sap_st, 'รอปิด SAP')
-
-        close_date = c.get('closeDate','') or ''
-        remark = 'ยกเลิกใบงาน' if cancelled else (
-            f"ปิดงานวันที่ {fmt_be(close_date)}" if close_date and close_date != c.get('date','') else '')
-
-        row_data = [
-            c.get('area',''), c.get('date',''), c.get('seq',''),
-            c.get('jobNo',''), sap_no, c.get('notifyTime',''),
-            c.get('location',''), c.get('problem',''), c.get('solution',''),
-            c.get('technician',''), c.get('kpiVal',''),
-            c.get('responseTime',''), c.get('std',''),
-            c.get('approveTime',''), c.get('arriveTime',''), c.get('startTime',''),
-            close_time,
-            kpi_sym('pass' if cancelled else c.get('kpi1','')),
-            kpi_sym('pass' if cancelled else _kpi2_export(c)),
-            kpi_sym('pass' if cancelled else c.get('kpi3','')),
-            status, sap_label, remark,
-        ]
-        for ci, val in enumerate(row_data, 1):
-            cell = ws.cell(row=r, column=ci, value=val)
-            cell.font = font_data
-            cell.alignment = center if ci in (1,2,3,4,5,6,11,12,13,14,15,16,17,18,19,20,21,22) else left
-            if fill.fgColor.rgb != '00000000':
-                cell.fill = fill
-        ws.row_dimensions[r].height = 20
-
-    ws.freeze_panes = 'A2'
-    out = io.BytesIO(); wb.save(out); out.seek(0)
-    area = filters.get('area','ALL')
-    fname = f"Cases_{area}.xlsx"
-    return send_file(out, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-                     as_attachment=True, download_name=fname)
-
-
-@app.route('/api/export/pending', methods=['POST'])
-@login_required
-def export_pending():
-    """Export เคสค้างดำเนินการเป็น Excel"""
-    import openpyxl
-    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
-    d = request.get_json()
-    cases = d.get('cases', [])
-    filters = d.get('filters', {})
-
-    wb = openpyxl.Workbook()
-    ws = wb.active
-    ws.title = 'ค้างดำเนินการ'
-
-    # ── Styles ──────────────────────────────────────────
-    font_hdr  = Font(name='TH SarabunPSK', size=12, bold=True, color='FFFFFF')
-    font_data = Font(name='TH SarabunPSK', size=12)
-    fill_hdr  = PatternFill('solid', fgColor='1F3864')
-    fill_odd  = PatternFill('solid', fgColor='EEF2FF')
-    center = Alignment(horizontal='center', vertical='center', wrap_text=True)
-    left   = Alignment(vertical='center', wrap_text=True)
-
-    # ── Headers ─────────────────────────────────────────
-    headers = ['พื้นที่','วันที่','ลำดับ','Job No.','SAP No.','เวลาแจ้ง',
-               'ตำแหน่ง / สถานที่','ปัญหา','ช่างผู้ซ่อม',
-               'KPI1','อายุ (วัน)','เหตุผลที่ค้าง']
-    col_widths = [8,12,8,14,14,10,30,30,18,8,10,30]
-
-    for ci, h in enumerate(headers, 1):
-        cell = ws.cell(row=1, column=ci, value=h)
-        cell.font = font_hdr; cell.fill = fill_hdr; cell.alignment = center
-    ws.row_dimensions[1].height = 30
-
-    for ci, w in enumerate(col_widths, 1):
-        ws.column_dimensions[openpyxl.utils.get_column_letter(ci)].width = w
-
-    # ── Data rows ────────────────────────────────────────
-    from datetime import date as _date
-    today = _date.today()
-    for i, c in enumerate(cases):
-        r = i + 2
-        fill = fill_odd if i % 2 == 0 else PatternFill()
-        try:
-            case_date = _date.fromisoformat(c.get('date',''))
-            age = (today - case_date).days
-        except: age = ''
-
-        row_data = [
-            c.get('area',''),
-            c.get('date',''),
-            c.get('seq',''),
-            c.get('jobNo',''),
-            c.get('sapNo',''),
-            c.get('notifyTime',''),
-            c.get('location',''),
-            c.get('problem',''),
-            c.get('technician',''),
-            '✓' if c.get('kpi1')=='pass' else ('✗' if c.get('kpi1')=='fail' else ''),
-            age,
-            c.get('pendingReason',''),
-        ]
-        for ci, val in enumerate(row_data, 1):
-            cell = ws.cell(row=r, column=ci, value=val)
-            cell.font = font_data
-            cell.alignment = center if ci in (1,2,3,4,5,6,10,11) else left
-            if fill.fgColor.rgb != '00000000':
-                cell.fill = fill
-        ws.row_dimensions[r].height = 20
-
-    # ── Summary ─────────────────────────────────────────
-    ws.freeze_panes = 'A2'
-    month_str = filters.get('month','') or ''
-    area_str  = filters.get('area','') or 'ทุกพื้นที่'
-
-    out = io.BytesIO(); wb.save(out); out.seek(0)
-    fname = f"Pending_{month_str or 'all'}_{area_str}.xlsx".replace(' ','_')
-    return send_file(out, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-                     as_attachment=True, download_name=fname)
-
 
 @app.route('/api/export/sap', methods=['POST'])
 @login_required
