@@ -99,7 +99,6 @@ textarea.paste-box { width: 100%; height: 200px; font-family: 'Courier New', mon
   <button class="nav-btn" onclick="showPage('input',this)">บันทึกเคส</button>
   <button class="nav-btn" onclick="showPage('cases',this)">รายการเคส</button>
   <button class="nav-btn" onclick="showPage('summary',this)">สรุปรายเดือน</button>
-  <button class="nav-btn" onclick="showPage('yearsummary',this)">สรุปรายปี</button>
   <button class="nav-btn" onclick="showPage('pending',this)">ค้างดำเนินการ</button>
   <button class="nav-btn" onclick="showPage('sapclose',this)">ปิด SAP</button>
   <div style="margin-left:auto;display:flex;align-items:center;gap:4px;">
@@ -267,19 +266,6 @@ textarea.paste-box { width: 100%; height: 200px; font-family: 'Courier New', mon
     <button class="btn btn-success btn-sm" onclick="exportMonthlyExcel(event)">📊 Export Excel</button>
   </div>
   <div id="summary-content"></div>
-</div>
-
-<!-- YEAR SUMMARY -->
-<div id="page-yearsummary" class="page">
-  <div class="date-filter">
-    <label>ปี (พ.ศ.)</label>
-    <select id="year-select" onchange="renderYearSummary()"></select>
-    <label>พื้นที่</label>
-    <select id="year-area" onchange="renderYearSummary()">
-      <option value="ALL">ทุกพื้นที่</option><option value="MTB">MTB</option><option value="Z2">Z2</option><option value="FZ">FZ</option><option value="SAT1">SAT1</option>
-    </select>
-  </div>
-  <div id="yearsummary-content"></div>
 </div>
 
 <!-- PENDING -->
@@ -464,7 +450,6 @@ function showPage(p, btn) {
     if(p==='dashboard') renderDashboard();
     if(p==='cases') renderCases();
     if(p==='summary') renderSummary();
-    if(p==='yearsummary') renderYearSummary();
     if(p==='pending') renderPending();
     if(p==='sapclose') renderSapClose();
   });
@@ -1135,137 +1120,6 @@ function renderSummary() {
   }
   html+='</div>';
   document.getElementById('summary-content').innerHTML=html;
-}
-
-// ─── YEAR SUMMARY ─────────────────────────────────────
-function populateYearSelect() {
-  const sel = document.getElementById('year-select');
-  if(!sel) return;
-  // รวบรวมปี ค.ศ. จาก db
-  const years = [...new Set(db.map(c => c.date ? c.date.substring(0,4) : null).filter(Boolean))].sort().reverse();
-  // ถ้าไม่มีข้อมูล ใส่ปีปัจจุบัน
-  if(!years.length) years.push(String(new Date().getFullYear()));
-  const curVal = sel.value;
-  sel.innerHTML = years.map(y => `<option value="${y}"${y===curVal?' selected':''}>${parseInt(y)+543}</option>`).join('');
-  if(!curVal) sel.value = years[0];
-}
-
-function renderYearSummary() {
-  populateYearSelect();
-  const yearISO = document.getElementById('year-select').value;
-  const area    = document.getElementById('year-area').value;
-  const yearTH  = parseInt(yearISO) + 543;
-
-  if(!yearISO) { document.getElementById('yearsummary-content').innerHTML='<div class="no-data">ไม่มีข้อมูล</div>'; return; }
-
-  let cases = db.filter(c => c.date && c.date.startsWith(yearISO));
-  if(area !== 'ALL') cases = cases.filter(c => c.area === area);
-
-  // ── ยอดรวมทั้งปี ─────────────────────────────────────────────────────────
-  const total   = cases.length;
-  const done    = cases.filter(c => c.closeTime || c.cancelled).length;
-  const pending = cases.filter(c => !c.closeTime && !c.cancelled).length;
-  const k1p = cases.filter(c => kpi1Eff(c)==='pass').length, k1t = cases.filter(c => kpi1Eff(c)).length;
-  const k2p = cases.filter(c => kpi2Eff(c)==='pass').length, k2t = cases.filter(c => kpi2Eff(c)).length;
-  const k3p = cases.filter(c => c.kpi3==='pass'||c.cancelled).length, k3t = cases.filter(c => c.kpi3||c.cancelled).length;
-
-  let html = `<div class="card">
-  <div class="section-title">สรุปปี ${yearTH} — ${area==='ALL'?'ทุกพื้นที่':area}</div>
-  <div class="stats-grid" style="margin-bottom:14px;">
-    <div class="stat"><div class="stat-num">${total}</div><div class="stat-label">งานทั้งหมด</div></div>
-    <div class="stat green"><div class="stat-num">${done}</div><div class="stat-label">เสร็จแล้ว</div></div>
-    <div class="stat orange"><div class="stat-num">${pending}</div><div class="stat-label">ยังไม่เสร็จ</div></div>
-    <div class="stat"><div class="stat-num">${pct(k1p,k1t)}%</div><div class="stat-label">KPI1 ผ่าน (${k1p}/${k1t})</div></div>
-    <div class="stat"><div class="stat-num">${pct(k2p,k2t)}%</div><div class="stat-label">KPI2 ผ่าน (${k2p}/${k2t})</div></div>
-    <div class="stat"><div class="stat-num">${pct(k3p,k3t)}%</div><div class="stat-label">KPI3 ผ่าน (${k3p}/${k3t})</div></div>
-  </div>`;
-
-  // ── การ์ดแยกพื้นที่ ──────────────────────────────────────────────────────
-  if(area === 'ALL') {
-    html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px;">';
-    ['MTB','Z2','FZ','SAT1'].forEach(a => {
-      const ac = cases.filter(c => c.area === a);
-      const ad = ac.filter(c => c.closeTime || c.cancelled).length;
-      const ap = ac.filter(c => !c.closeTime && !c.cancelled).length;
-      const ak1p = ac.filter(c => kpi1Eff(c)==='pass').length, ak1t = ac.filter(c => kpi1Eff(c)).length;
-      const ak2p = ac.filter(c => kpi2Eff(c)==='pass').length, ak2t = ac.filter(c => kpi2Eff(c)).length;
-      const ak3p = ac.filter(c => c.kpi3==='pass'||c.cancelled).length, ak3t = ac.filter(c => c.kpi3||c.cancelled).length;
-      html += `<div class="card" style="margin:0;">
-        <div class="section-title" style="font-size:12px;">${a}</div>
-        <div style="display:flex;gap:8px;margin-bottom:6px;flex-wrap:wrap;font-size:12px;">
-          <span>ทั้งหมด <strong>${ac.length}</strong></span>
-          <span style="color:#1e7e4a;">เสร็จ <strong>${ad}</strong></span>
-          <span style="color:#d97706;">ค้าง <strong>${ap}</strong></span>
-        </div>
-        <div style="font-size:11px;display:flex;gap:8px;flex-wrap:wrap;color:#555;">
-          <span>KPI1: <strong>${pct(ak1p,ak1t)}%</strong></span>
-          <span>KPI2: <strong>${pct(ak2p,ak2t)}%</strong></span>
-          <span>KPI3: <strong>${pct(ak3p,ak3t)}%</strong></span>
-        </div></div>`;
-    });
-    html += '</div>';
-  }
-
-  // ── ตารางแยกรายเดือน 10 คอลัมน์ ─────────────────────────────────────────
-  // สร้างแถวสำหรับทุก 12 เดือนของปีนั้น (แม้ไม่มีข้อมูลก็แสดง)
-  const allMonths = Array.from({length:12}, (_,i) => `${yearISO}-${String(i+1).padStart(2,'0')}`);
-  html += `<div class="section-title" style="margin-top:8px;">รายเดือน</div>
-  <div class="tbl-wrap"><table>
-  <thead><tr>
-    <th>เดือน</th>
-    <th title="งานทั้งหมด">ทั้งหมด</th>
-    <th title="เสร็จแล้ว" style="color:#90ee90;">เสร็จ</th>
-    <th title="ยังไม่เสร็จ" style="color:#ffd700;">ค้าง</th>
-    <th>KPI1 ผ่าน</th>
-    <th>KPI2 ผ่าน</th>
-    <th>KPI3 ผ่าน</th>
-  </tr></thead>
-  <tbody>`;
-
-  let totRow = { t:0,d:0,p:0,k1p:0,k1t:0,k2p:0,k2t:0,k3p:0,k3t:0 };
-
-  allMonths.forEach(m => {
-    const mc = cases.filter(c => c.date && c.date.startsWith(m));
-    const md  = mc.filter(c => c.closeTime || c.cancelled).length;
-    const mp  = mc.filter(c => !c.closeTime && !c.cancelled).length;
-    const mk1p = mc.filter(c => kpi1Eff(c)==='pass').length, mk1t = mc.filter(c => kpi1Eff(c)).length;
-    const mk2p = mc.filter(c => kpi2Eff(c)==='pass').length, mk2t = mc.filter(c => kpi2Eff(c)).length;
-    const mk3p = mc.filter(c => c.kpi3==='pass'||c.cancelled).length, mk3t = mc.filter(c => c.kpi3||c.cancelled).length;
-    const [yr2, mo2] = m.split('-');
-    const thNames = ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
-    const moLabel = `${thNames[parseInt(mo2)-1]} ${parseInt(yr2)+543}`;
-    const noData = mc.length === 0;
-    const rowStyle = noData ? 'color:#bbb;' : '';
-
-    // สะสมยอดรวม
-    totRow.t+=mc.length; totRow.d+=md; totRow.p+=mp;
-    totRow.k1p+=mk1p; totRow.k1t+=mk1t; totRow.k2p+=mk2p; totRow.k2t+=mk2t;
-    totRow.k3p+=mk3p; totRow.k3t+=mk3t;
-
-    html += `<tr style="${rowStyle}">
-      <td style="white-space:nowrap;font-weight:500;">${moLabel}</td>
-      <td style="text-align:center;">${mc.length||'—'}</td>
-      <td style="text-align:center;color:${noData?'#bbb':'#1e7e4a'};">${noData?'—':md}</td>
-      <td style="text-align:center;color:${noData?'#bbb':'#d97706'};">${noData?'—':mp}</td>
-      <td style="text-align:center;">${noData?'—':`${mk1p}/${mk1t} (${pct(mk1p,mk1t)}%)`}</td>
-      <td style="text-align:center;">${noData?'—':`${mk2p}/${mk2t} (${pct(mk2p,mk2t)}%)`}</td>
-      <td style="text-align:center;">${noData?'—':`${mk3p}/${mk3t} (${pct(mk3p,mk3t)}%)`}</td>
-    </tr>`;
-  });
-
-  // แถวรวม
-  html += `<tr style="font-weight:600;background:#f0f4f8;border-top:2px solid #1a3a5c;">
-    <td>รวมทั้งปี</td>
-    <td style="text-align:center;">${totRow.t}</td>
-    <td style="text-align:center;color:#1e7e4a;">${totRow.d}</td>
-    <td style="text-align:center;color:#d97706;">${totRow.p}</td>
-    <td style="text-align:center;">${totRow.k1p}/${totRow.k1t} (${pct(totRow.k1p,totRow.k1t)}%)</td>
-    <td style="text-align:center;">${totRow.k2p}/${totRow.k2t} (${pct(totRow.k2p,totRow.k2t)}%)</td>
-    <td style="text-align:center;">${totRow.k3p}/${totRow.k3t} (${pct(totRow.k3p,totRow.k3t)}%)</td>
-  </tr>`;
-
-  html += `</tbody></table></div></div>`;
-  document.getElementById('yearsummary-content').innerHTML = html;
 }
 
 // ─── PENDING ──────────────────────────────────────────
