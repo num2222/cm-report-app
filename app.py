@@ -452,7 +452,7 @@ def _write_rows(ws, cases, start_row=8):
         set_cell(ws, r, 10, c.get('arriveTime',''),    align=center)
 
         if is_cancelled:
-            set_cell(ws, r, 11, '', align=center)
+            set_cell(ws, r, 11, kpi_sym('pass'), font=kpi_font, align=center)  # col K KPI1 ✓
         else:
             kpi1_val = c.get('kpi1')
             set_cell(ws, r, 11, kpi_sym(kpi1_val),
@@ -467,7 +467,7 @@ def _write_rows(ws, cases, start_row=8):
         # col Q = หมายเหตุ
         close_date = c.get('closeDate','')
         if is_cancelled:
-            set_cell(ws, r, 16, '', align=center)
+            set_cell(ws, r, 16, kpi_sym('pass'), font=kpi_font, align=center)  # col P KPI2 ✓
             set_cell(ws, r, 17, 'ยกเลิกใบงาน')
         else:
             kpi2_val = _kpi2_export(c)
@@ -616,9 +616,9 @@ def export_monthly():
             set_cell(ws, r, 14, STD_HOURS.get(std,''),    align=center)
             set_cell(ws, r, 15, c.get('closeTime',''),    align=center)
             if is_cancelled:
-                clear_kpi_cell(ws, r, 11)
-                clear_kpi_cell(ws, r, 16)
-                clear_kpi_cell(ws, r, 17)
+                set_kpi_cell(ws, r, 11, 'pass')   # col K KPI1 ✓
+                set_kpi_cell(ws, r, 16, 'pass')   # col P KPI2 ✓
+                set_kpi_cell(ws, r, 17, 'pass')   # col Q KPI3 ✓
                 set_cell(ws, r, 18, 'ยกเลิกใบงาน')  # col R = หมายเหตุ
             else:
                 set_kpi_cell(ws, r, 11, c.get('kpi1'))
