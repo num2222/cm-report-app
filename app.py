@@ -143,18 +143,32 @@ def _is_cancelled(c):
     """เช็คว่าเคสนี้ถูกยกเลิกใบงานหรือไม่"""
     return bool(c.get('cancelled'))
 
+def _kpi1_export(c):
+    """KPI1 สำหรับ export Excel:
+    - ยกเลิกใบงาน → 'pass' (ผ่านทั้งหมด)
+    - มิฉะนั้น → ใช้ค่า kpi1 จริง"""
+    if _is_cancelled(c): return 'pass'
+    return c.get('kpi1', '')
+
 def _kpi2_export(c):
     """KPI2 สำหรับ export Excel:
-    - ยกเลิกใบงาน → '' (ไม่แสดงผล KPI)
+    - ยกเลิกใบงาน → 'pass' (ผ่านทั้งหมด)
     - ไม่มีเวลาปิดงาน → fail เสมอ (ยังไม่เสร็จ)
     - มีเวลาปิดงาน → ใช้ค่า kpi2 จริง"""
-    if _is_cancelled(c): return ''
+    if _is_cancelled(c): return 'pass'
     if not c.get('closeTime'): return 'fail'
     return c.get('kpi2', '')
 
+def _kpi3_export(c):
+    """KPI3 สำหรับ export Excel:
+    - ยกเลิกใบงาน → 'pass' (ผ่านทั้งหมด)
+    - มิฉะนั้น → ใช้ค่า kpi3 จริง"""
+    if _is_cancelled(c): return 'pass'
+    return c.get('kpi3', '')
+
 def _kpi_export(c, key):
-    """KPI1/KPI3 สำหรับ export: ถ้ายกเลิกใบงาน → '' (ไม่แสดง)"""
-    if _is_cancelled(c): return ''
+    """KPI1/KPI3 สำหรับ export แบบ symbol: ถ้ายกเลิกใบงาน → 'pass'"""
+    if _is_cancelled(c): return 'pass'
     return c.get(key, '')
 
 STD_LABELS = {'A':'5-30 นาที','B':'1-3 ชม.','C':'3 ชม.-1 วัน','D':'1-7 วัน','E':'7-14 วัน','F':'1 เดือน'}
@@ -529,12 +543,12 @@ def export_daily():
         ws_cm.cell(row=r1,column=10).value=len(ac)
         ws_cm.cell(row=r2,column=10).value=len(ad)
         ws_cm.cell(row=r3,column=10).value=len(ac)-len(ad)
-    # KPI1: นับเฉพาะเคสที่ไม่ได้ยกเลิกใบงาน
-    k1p=sum(1 for c in all_c if c.get('kpi1')=='pass' and not c.get('cancelled'))
-    k1f=sum(1 for c in all_c if c.get('kpi1')=='fail' and not c.get('cancelled'))
-    # KPI2: ไม่มีเวลาปิดงาน = ไม่ผ่าน (ยกเว้นเคสที่ยกเลิกใบงาน)
-    k2p=sum(1 for c in all_c if _kpi2_export(c)=='pass' and not c.get('cancelled'))
-    k2f=sum(1 for c in all_c if _kpi2_export(c)=='fail' and not c.get('cancelled'))
+    # KPI1: ยกเลิกใบงาน = ผ่านทั้งหมด (_kpi1_export จัดการแล้ว)
+    k1p=sum(1 for c in all_c if _kpi1_export(c)=='pass')
+    k1f=sum(1 for c in all_c if _kpi1_export(c)=='fail')
+    # KPI2: ยกเลิกใบงาน = ผ่านทั้งหมด (_kpi2_export จัดการแล้ว)
+    k2p=sum(1 for c in all_c if _kpi2_export(c)=='pass')
+    k2f=sum(1 for c in all_c if _kpi2_export(c)=='fail')
     # Daily CM: D38=KPI1 pass, D40=KPI1 fail, J38=KPI2 pass, J40=KPI2 fail
     # F38, L38, F40, L40 เป็น formula ใน template คำนวณ % อัตโนมัติ ไม่ต้องเขียน
     ws_cm.cell(row=38,column=4).value=k1p   # D38 KPI1 ผ่าน
@@ -634,12 +648,12 @@ def export_monthly():
         ws_mc.cell(row=r1,column=13).value=len(ac)
         ws_mc.cell(row=r2,column=13).value=len(ad)
         ws_mc.cell(row=r3,column=13).value=len(ac)-len(ad)
-    k1p=sum(1 for c in all_c if c.get('kpi1')=='pass' and not c.get('cancelled'))
-    k1f=sum(1 for c in all_c if c.get('kpi1')=='fail' and not c.get('cancelled'))
-    k2p=sum(1 for c in all_c if _kpi2_export(c)=='pass' and not c.get('cancelled'))
-    k2f=sum(1 for c in all_c if _kpi2_export(c)=='fail' and not c.get('cancelled'))
-    k3p=sum(1 for c in all_c if c.get('kpi3')=='pass' and not c.get('cancelled'))
-    k3f=sum(1 for c in all_c if c.get('kpi3')=='fail' and not c.get('cancelled'))
+    k1p=sum(1 for c in all_c if _kpi1_export(c)=='pass')
+    k1f=sum(1 for c in all_c if _kpi1_export(c)=='fail')
+    k2p=sum(1 for c in all_c if _kpi2_export(c)=='pass')
+    k2f=sum(1 for c in all_c if _kpi2_export(c)=='fail')
+    k3p=sum(1 for c in all_c if _kpi3_export(c)=='pass')
+    k3f=sum(1 for c in all_c if _kpi3_export(c)=='fail')
     k1t=(k1p+k1f) or 1; k2t=(k2p+k2f) or 1; k3t=(k3p+k3f) or 1
     # Month CM cell addresses ตาม Template จริง:
     # KPI1: C39=pass count, E39=pass%, C41=fail count, E41=fail%
