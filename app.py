@@ -755,6 +755,173 @@ def export_sap():
     return send_file(out, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
                      as_attachment=True, download_name='CM_SAP_Status.xlsx')
 
+# ── EXPORT CASES (รายการเคส) ───────────────────────────────────────────
+@app.route('/api/export/cases', methods=['POST'])
+@login_required
+def export_cases():
+    """Export รายการเคสที่กรองแล้วเป็น Excel"""
+    import openpyxl
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    from openpyxl.utils import get_column_letter
+    d = request.get_json()
+    cases   = d.get('cases', [])
+    filters = d.get('filters', {})
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = 'รายการเคส'
+
+    # Title
+    ws.merge_cells('A1:N1')
+    ws['A1'] = 'รายการเคส CM — ระบบไฟฟ้าแรงดันต่ำ (LV System)'
+    ws['A1'].font = Font(bold=True, size=13)
+    ws['A1'].alignment = Alignment(horizontal='center')
+
+    # Filter description row
+    filter_desc = []
+    area = filters.get('area','')
+    if area and area != 'ALL': filter_desc.append(f"พื้นที่: {area}")
+    if filters.get('from'): filter_desc.append(f"จาก: {filters['from']}")
+    if filters.get('to'):   filter_desc.append(f"ถึง: {filters['to']}")
+    close_map = {'done':'เสร็จแล้ว','pending':'ค้างดำเนินการ','cancelled':'ยกเลิกใบงาน'}
+    if filters.get('close') and filters['close'] != 'ALL':
+        filter_desc.append(f"สถานะ: {close_map.get(filters['close'], filters['close'])}")
+    ws.merge_cells('A2:N2')
+    ws['A2'] = '  '.join(filter_desc) if filter_desc else 'ทุกพื้นที่ / ทุกสถานะ'
+    ws['A2'].alignment = Alignment(horizontal='center')
+    ws['A2'].font = Font(size=11, color='555555')
+
+    # Header
+    headers = ['พื้นที่','วันที่','ลำดับ','Job No.','SAP No.','เวลาแจ้ง','บริเวณ','ปัญหา','KPI1','KPI2','KPI3','ปิดงาน','SAP','หมายเหตุ']
+    col_widths = [8,10,6,10,12,9,22,30,7,7,7,9,12,18]
+    hdr_fill = PatternFill('solid', fgColor='1A3A5C')
+    hdr_font = Font(color='FFFFFF', bold=True, size=11)
+    thin = Border(left=Side(style='thin'), right=Side(style='thin'),
+                  top=Side(style='thin'), bottom=Side(style='thin'))
+    for ci,(h,w) in enumerate(zip(headers, col_widths), 1):
+        cell = ws.cell(row=3, column=ci, value=h)
+        cell.fill = hdr_fill; cell.font = hdr_font
+        cell.alignment = Alignment(horizontal='center', vertical='center')
+        cell.border = thin
+        ws.column_dimensions[get_column_letter(ci)].width = w
+
+    kpi_sym_map = {'pass':'✓','fail':'✗','':'','None':''}
+    sap_map = {'pending':'รอปิด SAP','closed':'ปิด SAP แล้ว','failed':'ปิด SAP ไม่สำเร็จ','':'NON-SAP',None:'NON-SAP'}
+    center = Alignment(horizontal='center', vertical='center')
+    wrap   = Alignment(wrap_text=True, vertical='center')
+    pass_font = Font(color='1E6B2E', bold=True, size=11)
+    fail_font = Font(color='C0392B', bold=True, size=11)
+
+    for ri, c in enumerate(cases, 4):
+        is_cancelled = c.get('cancelled', False)
+        k1 = _kpi1_export(c); k2 = _kpi2_export(c); k3 = _kpi3_export(c)
+        ws.row_dimensions[ri].height = 18
+        vals = [
+            c.get('area',''), fmt_be(c.get('date','')), c.get('seq',''),
+            c.get('jobNo',''), c.get('sapNo',''), c.get('notifyTime',''),
+            c.get('location',''), c.get('problem',''),
+            kpi_sym_map.get(k1,''), kpi_sym_map.get(k2,''), kpi_sym_map.get(k3,''),
+            c.get('closeTime',''), sap_map.get(c.get('sapStatus'),c.get('sapStatus','')),
+            'ยกเลิกใบงาน' if is_cancelled else ''
+        ]
+        aligns = [center,center,center,center,center,center,wrap,wrap,center,center,center,center,center,center]
+        for ci,(v,al) in enumerate(zip(vals, aligns), 1):
+            cell = ws.cell(row=ri, column=ci, value=v)
+            cell.alignment = al
+            cell.border = thin
+            # สีสัญลักษณ์ KPI
+            if ci in (9,10,11):
+                cell.font = pass_font if v=='✓' else (fail_font if v=='✗' else Font(size=11))
+
+    # Summary row
+    sr = len(cases) + 4
+    ws.merge_cells(f'A{sr}:H{sr}')
+    ws[f'A{sr}'] = f'รวมทั้งหมด {len(cases)} เคส'
+    ws[f'A{sr}'].font = Font(bold=True, size=11)
+    ws[f'A{sr}'].alignment = Alignment(horizontal='right', vertical='center')
+
+    out = io.BytesIO(); wb.save(out); out.seek(0)
+    area_str = area if area and area != 'ALL' else 'ALL'
+    return send_file(out, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                     as_attachment=True, download_name=f'Cases_{area_str}.xlsx')
+
+
+# ── EXPORT PENDING (เคสค้างดำเนินการ) ─────────────────────────────────
+@app.route('/api/export/pending', methods=['POST'])
+@login_required
+def export_pending():
+    """Export เคสค้างดำเนินการเป็น Excel"""
+    import openpyxl
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    from openpyxl.utils import get_column_letter
+    d = request.get_json()
+    cases   = d.get('cases', [])
+    filters = d.get('filters', {})
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = 'เคสค้างดำเนินการ'
+
+    ws.merge_cells('A1:J1')
+    ws['A1'] = 'เคสค้างดำเนินการ CM — ระบบไฟฟ้าแรงดันต่ำ (LV System)'
+    ws['A1'].font = Font(bold=True, size=13)
+    ws['A1'].alignment = Alignment(horizontal='center')
+
+    filter_desc = []
+    area = filters.get('area','')
+    if area and area != 'ALL': filter_desc.append(f"พื้นที่: {area}")
+    if filters.get('month'): filter_desc.append(f"เดือน: {filters['month']}")
+    ws.merge_cells('A2:J2')
+    ws['A2'] = '  '.join(filter_desc) if filter_desc else 'ทุกพื้นที่ / ทุกเดือน'
+    ws['A2'].alignment = Alignment(horizontal='center')
+    ws['A2'].font = Font(size=11, color='555555')
+
+    headers = ['พื้นที่','วันที่','ลำดับ','Job No.','SAP No.','เวลาแจ้ง','บริเวณ','ปัญหา','KPI1','KPI2']
+    col_widths = [8,10,6,10,12,9,24,32,7,7]
+    hdr_fill = PatternFill('solid', fgColor='7B2D00')
+    hdr_font = Font(color='FFFFFF', bold=True, size=11)
+    thin = Border(left=Side(style='thin'), right=Side(style='thin'),
+                  top=Side(style='thin'), bottom=Side(style='thin'))
+    for ci,(h,w) in enumerate(zip(headers, col_widths), 1):
+        cell = ws.cell(row=3, column=ci, value=h)
+        cell.fill = hdr_fill; cell.font = hdr_font
+        cell.alignment = Alignment(horizontal='center', vertical='center')
+        cell.border = thin
+        ws.column_dimensions[get_column_letter(ci)].width = w
+
+    center = Alignment(horizontal='center', vertical='center')
+    wrap   = Alignment(wrap_text=True, vertical='center')
+    pass_font = Font(color='1E6B2E', bold=True, size=11)
+    fail_font = Font(color='C0392B', bold=True, size=11)
+    kpi_sym_map = {'pass':'✓','fail':'✗','':''}
+
+    for ri, c in enumerate(cases, 4):
+        k1 = _kpi1_export(c); k2 = _kpi2_export(c)
+        ws.row_dimensions[ri].height = 18
+        vals = [
+            c.get('area',''), fmt_be(c.get('date','')), c.get('seq',''),
+            c.get('jobNo',''), c.get('sapNo',''), c.get('notifyTime',''),
+            c.get('location',''), c.get('problem',''),
+            kpi_sym_map.get(k1,''), kpi_sym_map.get(k2,'')
+        ]
+        aligns = [center,center,center,center,center,center,wrap,wrap,center,center]
+        for ci,(v,al) in enumerate(zip(vals, aligns), 1):
+            cell = ws.cell(row=ri, column=ci, value=v)
+            cell.alignment = al; cell.border = thin
+            if ci in (9,10):
+                cell.font = pass_font if v=='✓' else (fail_font if v=='✗' else Font(size=11))
+
+    sr = len(cases) + 4
+    ws.merge_cells(f'A{sr}:H{sr}')
+    ws[f'A{sr}'] = f'รวมค้างดำเนินการ {len(cases)} เคส'
+    ws[f'A{sr}'].font = Font(bold=True, size=11)
+    ws[f'A{sr}'].alignment = Alignment(horizontal='right', vertical='center')
+
+    out = io.BytesIO(); wb.save(out); out.seek(0)
+    return send_file(out, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                     as_attachment=True, download_name='CM_Pending.xlsx')
+
+
 # ── BACKUP / IMPORT ────────────────────────────────────────────────────
 @app.route('/api/backup', methods=['GET'])
 @login_required
