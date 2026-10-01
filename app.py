@@ -791,13 +791,21 @@ def export_cases():
     ws['A2'].alignment = Alignment(horizontal='center')
     ws['A2'].font = Font(size=11, color='555555')
 
-    # Header
-    headers = ['พื้นที่','วันที่','ลำดับ','Job No.','SAP No.','เวลาแจ้ง','บริเวณ','ปัญหา','KPI1','KPI2','KPI3','ปิดงาน','SAP','หมายเหตุ']
-    col_widths = [8,10,6,10,12,9,22,30,7,7,7,9,12,18]
+    # Header — ครบทุก column เหมือนรายงานเดิม (23 col)
+    headers = [
+        'พื้นที่','วันที่','ลำดับ','Job No.','SAP No.','เวลาแจ้ง',
+        'ตำแหน่ง / สถานที่','ปัญหา','การแก้ไข','ช่างผู้ซ่อม',
+        'KPI No.','ตอบรับ','มาตรฐาน','อนุมัติ','ถึงหน้างาน','เริ่มแก้ไข','ปิดงาน',
+        'KPI1','KPI2','KPI3',
+        'สถานะ','สถานะ SAP','หมายเหตุ'
+    ]
+    col_widths = [8,10,6,10,12,9,26,32,30,18,9,9,9,9,12,9,9,7,7,7,10,14,18]
     hdr_fill = PatternFill('solid', fgColor='1A3A5C')
     hdr_font = Font(color='FFFFFF', bold=True, size=11)
     thin = Border(left=Side(style='thin'), right=Side(style='thin'),
                   top=Side(style='thin'), bottom=Side(style='thin'))
+    ws.merge_cells('A1:W1')
+    ws.merge_cells('A2:W2')
     for ci,(h,w) in enumerate(zip(headers, col_widths), 1):
         cell = ws.cell(row=3, column=ci, value=h)
         cell.fill = hdr_fill; cell.font = hdr_font
@@ -805,37 +813,65 @@ def export_cases():
         cell.border = thin
         ws.column_dimensions[get_column_letter(ci)].width = w
 
-    kpi_sym_map = {'pass':'✓','fail':'✗','':'','None':''}
+    kpi_sym_map = {'pass':'✓','fail':'✗','':''}
     sap_map = {'pending':'รอปิด SAP','closed':'ปิด SAP แล้ว','failed':'ปิด SAP ไม่สำเร็จ','':'NON-SAP',None:'NON-SAP'}
+    status_map = {'done':'ปิดแล้ว','pending':'ค้างดำเนินการ','cancelled':'ยกเลิกใบงาน'}
     center = Alignment(horizontal='center', vertical='center')
     wrap   = Alignment(wrap_text=True, vertical='center')
     pass_font = Font(color='1E6B2E', bold=True, size=11)
     fail_font = Font(color='C0392B', bold=True, size=11)
+    data_font = Font(size=11)
 
     for ri, c in enumerate(cases, 4):
         is_cancelled = c.get('cancelled', False)
         k1 = _kpi1_export(c); k2 = _kpi2_export(c); k3 = _kpi3_export(c)
-        ws.row_dimensions[ri].height = 18
+        # สถานะงาน
+        if is_cancelled:  st = 'ยกเลิกใบงาน'
+        elif c.get('closeTime'): st = 'ปิดแล้ว'
+        else: st = 'ค้างดำเนินการ'
+        ws.row_dimensions[ri].height = 20
         vals = [
-            c.get('area',''), fmt_be(c.get('date','')), c.get('seq',''),
-            c.get('jobNo',''), c.get('sapNo',''), c.get('notifyTime',''),
-            c.get('location',''), c.get('problem',''),
-            kpi_sym_map.get(k1,''), kpi_sym_map.get(k2,''), kpi_sym_map.get(k3,''),
-            c.get('closeTime',''), sap_map.get(c.get('sapStatus'),c.get('sapStatus','')),
-            'ยกเลิกใบงาน' if is_cancelled else ''
+            c.get('area',''),           # A พื้นที่
+            fmt_be(c.get('date','')),   # B วันที่
+            c.get('seq',''),            # C ลำดับ
+            c.get('jobNo',''),          # D Job No.
+            c.get('sapNo',''),          # E SAP No.
+            c.get('notifyTime',''),     # F เวลาแจ้ง
+            c.get('location',''),       # G ตำแหน่ง/สถานที่
+            c.get('problem',''),        # H ปัญหา
+            c.get('solution',''),       # I การแก้ไข
+            c.get('technician',''),     # J ช่างผู้ซ่อม
+            c.get('kpiVal',''),         # K KPI No.
+            c.get('responseTime',''),   # L ตอบรับ
+            c.get('std',''),            # M มาตรฐาน
+            c.get('approveTime',''),    # N อนุมัติ
+            c.get('arriveTime',''),     # O ถึงหน้างาน
+            c.get('startTime',''),      # P เริ่มแก้ไข
+            c.get('closeTime',''),      # Q ปิดงาน
+            kpi_sym_map.get(k1,''),    # R KPI1
+            kpi_sym_map.get(k2,''),    # S KPI2
+            kpi_sym_map.get(k3,''),    # T KPI3
+            st,                         # U สถานะ
+            sap_map.get(c.get('sapStatus'), c.get('sapStatus','')),  # V สถานะ SAP
+            'ยกเลิกใบงาน' if is_cancelled else (
+                f"ปิดงานวันที่ {fmt_be(c.get('closeDate',''))}" if c.get('closeDate') and c.get('closeDate') != c.get('date') else ''
+            ),  # W หมายเหตุ
         ]
-        aligns = [center,center,center,center,center,center,wrap,wrap,center,center,center,center,center,center]
+        aligns = [center,center,center,center,center,center,wrap,wrap,wrap,wrap,
+                  center,center,center,center,center,center,center,
+                  center,center,center,center,center,wrap]
         for ci,(v,al) in enumerate(zip(vals, aligns), 1):
             cell = ws.cell(row=ri, column=ci, value=v)
             cell.alignment = al
             cell.border = thin
-            # สีสัญลักษณ์ KPI
-            if ci in (9,10,11):
-                cell.font = pass_font if v=='✓' else (fail_font if v=='✗' else Font(size=11))
+            if ci in (18,19,20):  # KPI columns
+                cell.font = pass_font if v=='✓' else (fail_font if v=='✗' else data_font)
+            else:
+                cell.font = data_font
 
     # Summary row
     sr = len(cases) + 4
-    ws.merge_cells(f'A{sr}:H{sr}')
+    ws.merge_cells(f'A{sr}:Q{sr}')
     ws[f'A{sr}'] = f'รวมทั้งหมด {len(cases)} เคส'
     ws[f'A{sr}'].font = Font(bold=True, size=11)
     ws[f'A{sr}'].alignment = Alignment(horizontal='right', vertical='center')
