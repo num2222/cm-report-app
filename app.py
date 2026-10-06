@@ -814,7 +814,11 @@ def export_cases():
         ws.column_dimensions[get_column_letter(ci)].width = w
 
     kpi_sym_map = {'pass':'✓','fail':'✗','':''}
-    sap_map = {'pending':'รอปิด SAP','closed':'ปิด SAP แล้ว','failed':'ปิด SAP ไม่สำเร็จ','':'NON-SAP',None:'NON-SAP'}
+    # sap_label: ถ้าไม่มี SAP No. → NON-SAP เสมอ (เหมือน App แสดง) ไม่สนใจค่า sapStatus ใน db
+    def sap_label(c):
+        if not c.get('sapNo'): return 'NON-SAP'
+        st = c.get('sapStatus') or 'pending'
+        return {'pending':'รอปิด SAP','closed':'ปิด SAP แล้ว','failed':'ปิด SAP ไม่สำเร็จ'}.get(st, st)
     status_map = {'done':'ปิดแล้ว','pending':'ค้างดำเนินการ','cancelled':'ยกเลิกใบงาน'}
     center = Alignment(horizontal='center', vertical='center')
     wrap   = Alignment(wrap_text=True, vertical='center')
@@ -852,7 +856,7 @@ def export_cases():
             kpi_sym_map.get(k2,''),    # S KPI2
             kpi_sym_map.get(k3,''),    # T KPI3
             st,                         # U สถานะ
-            sap_map.get(c.get('sapStatus'), c.get('sapStatus','')),  # V สถานะ SAP
+            sap_label(c),                                            # V สถานะ SAP
             'ยกเลิกใบงาน' if is_cancelled else (
                 f"ปิดงานวันที่ {fmt_be(c.get('closeDate',''))}" if c.get('closeDate') and c.get('closeDate') != c.get('date') else ''
             ),  # W หมายเหตุ
