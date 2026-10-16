@@ -684,12 +684,13 @@ def export_monthly():
     ws_mc.cell(row=30, column=17).value = 'การจัดทำรายงานเกินมาตรฐานที่กำหนดหรือไม่'
     ws_mc.cell(row=30, column=18).value = report_exceed
 
+    # นับ pass/fail: ค่า '' (ไม่มีข้อมูล/ยังไม่คำนวณ) = fail เพื่อให้ pass+fail == total เสมอ
     k1p=sum(1 for c in all_c if _kpi1_export(c)=='pass')
-    k1f=sum(1 for c in all_c if _kpi1_export(c)=='fail')
+    k1f=sum(1 for c in all_c if _kpi1_export(c)!='pass')
     k2p=sum(1 for c in all_c if _kpi2_export(c)=='pass')
-    k2f=sum(1 for c in all_c if _kpi2_export(c)=='fail')
+    k2f=sum(1 for c in all_c if _kpi2_export(c)!='pass')
     k3p=sum(1 for c in all_c if _kpi3_export(c)=='pass')
-    k3f=sum(1 for c in all_c if _kpi3_export(c)=='fail')
+    k3f=sum(1 for c in all_c if _kpi3_export(c)!='pass')
     k1t=(k1p+k1f) or 1; k2t=(k2p+k2f) or 1; k3t=(k3p+k3f) or 1
 
     # Month CM KPI summary:
@@ -707,15 +708,15 @@ def export_monthly():
     k3t_adj = (k3p_r39 + k3f_r41) or 1
 
     # Month CM cell addresses ตาม Template จริง:
-    # KPI1: C39=pass count, E39=pass%,  C41=fail count, E41=fail%   (ทศนิยม 1 ตำแหน่ง)
+    # KPI1: C39=pass count, E39=pass%,  C41=fail count, E41=fail%   (ทศนิยม 2 ตำแหน่ง)
     # KPI2: G39=pass count, I39=pass%,  G41=fail count, I41=fail%
     # KPI3: L39=pass count, N39=pass%,  L41=fail count, N41=fail%
-    ws_mc.cell(row=39,column=3).value=k1p_r39; ws_mc.cell(row=39,column=5).value=round(k1p_r39/k1t_adj*100,1)  # C39, E39
-    ws_mc.cell(row=41,column=3).value=k1f_r41; ws_mc.cell(row=41,column=5).value=round(k1f_r41/k1t_adj*100,1)  # C41, E41
-    ws_mc.cell(row=39,column=7).value=k2p_r39; ws_mc.cell(row=39,column=9).value=round(k2p_r39/k2t_adj*100,1)  # G39, I39
-    ws_mc.cell(row=41,column=7).value=k2f_r41; ws_mc.cell(row=41,column=9).value=round(k2f_r41/k2t_adj*100,1)  # G41, I41
-    ws_mc.cell(row=39,column=12).value=k3p_r39;ws_mc.cell(row=39,column=14).value=round(k3p_r39/k3t_adj*100,1) # L39, N39
-    ws_mc.cell(row=41,column=12).value=k3f_r41;ws_mc.cell(row=41,column=14).value=round(k3f_r41/k3t_adj*100,1) # L41, N41
+    ws_mc.cell(row=39,column=3).value=k1p_r39; ws_mc.cell(row=39,column=5).value=round(k1p_r39/k1t_adj*100,2)  # C39, E39
+    ws_mc.cell(row=41,column=3).value=k1f_r41; ws_mc.cell(row=41,column=5).value=round(k1f_r41/k1t_adj*100,2)  # C41, E41
+    ws_mc.cell(row=39,column=7).value=k2p_r39; ws_mc.cell(row=39,column=9).value=round(k2p_r39/k2t_adj*100,2)  # G39, I39
+    ws_mc.cell(row=41,column=7).value=k2f_r41; ws_mc.cell(row=41,column=9).value=round(k2f_r41/k2t_adj*100,2)  # G41, I41
+    ws_mc.cell(row=39,column=12).value=k3p_r39;ws_mc.cell(row=39,column=14).value=round(k3p_r39/k3t_adj*100,2) # L39, N39
+    ws_mc.cell(row=41,column=12).value=k3f_r41;ws_mc.cell(row=41,column=14).value=round(k3f_r41/k3t_adj*100,2) # L41, N41
     _add_logo_to_wb(wb, tmpl.read_bytes())
     out = io.BytesIO(); wb.save(out); out.seek(0)
     return send_file(out, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
