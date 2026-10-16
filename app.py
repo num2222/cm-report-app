@@ -694,15 +694,15 @@ def export_monthly():
     k1t=(k1p+k1f) or 1; k2t=(k2p+k2f) or 1; k3t=(k3p+k3f) or 1
 
     # Month CM KPI summary:
-    # ถ้า report_exceed == 'ไม่เกิน' → นับรวมใน "อยู่ในมาตรฐานกำหนด" (row 39)
-    # ถ้า report_exceed == 'เกิน'    → นับรวมใน "เกินมาตรฐานกำหนด" (row 41)
-    # +1 จาก MN30 (Q30 เป็น KPI ของการจัดทำรายงาน)
-    report_kpi_pass = 1 if report_exceed == 'ไม่เกิน' else 0
-    report_kpi_fail = 1 if report_exceed == 'เกิน'    else 0
+    # H13 = len(all_c) + mn_total (mn_rows = 5 แถว)
+    # KPI pass/fail ต้องรวม mn_total ทั้งหมดเพื่อให้ pass+fail == H13 เสมอ
+    # ถ้า report_exceed == 'ไม่เกิน' → MN ทั้งหมด pass, ถ้า 'เกิน' → MN ทั้งหมด fail
+    mn_kpi_pass = mn_total if report_exceed == 'ไม่เกิน' else 0
+    mn_kpi_fail = mn_total if report_exceed == 'เกิน'    else 0
 
-    k1p_r39 = k1p + report_kpi_pass; k1f_r41 = k1f + report_kpi_fail
-    k2p_r39 = k2p + report_kpi_pass; k2f_r41 = k2f + report_kpi_fail
-    k3p_r39 = k3p + report_kpi_pass; k3f_r41 = k3f + report_kpi_fail
+    k1p_r39 = k1p + mn_kpi_pass; k1f_r41 = k1f + mn_kpi_fail
+    k2p_r39 = k2p + mn_kpi_pass; k2f_r41 = k2f + mn_kpi_fail
+    k3p_r39 = k3p + mn_kpi_pass; k3f_r41 = k3f + mn_kpi_fail
     k1t_adj = (k1p_r39 + k1f_r41) or 1
     k2t_adj = (k2p_r39 + k2f_r41) or 1
     k3t_adj = (k3p_r39 + k3f_r41) or 1
