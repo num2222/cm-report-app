@@ -576,11 +576,25 @@ def export_monthly():
     areas = ['MTB','Z2','FZ','SAT1']
     area_cases = {}
 
-    def write_month_rows(ws, cases):
+    def write_month_rows(ws, cases, is_all_zone=False):
+        """เขียนข้อมูลลง sheet
+        Area sheets (MTB/Z2/FZ/SAT1) — columns:
+          A(1)=No. B(2)=วันที่ C(3)=JobNo D(4)=SapNo E(5)=เวลาแจ้ง
+          F(6)=สถานที่ G(7)=ปัญหา H(8)=KPI No. I(9)=เวลามาตรฐาน
+          J(10)=เวลาอนุมัติ K(11)=เวลาถึง L(12)=ผล KPI1
+          M(13)=การแก้ไข N(14)=KPI No. O(15)=เวลามาตรฐาน P(16)=ปิดงาน
+          Q(17)=ผล KPI2 R(18)=ผล KPI3 S(19)=หมายเหตุ
+        ALL_ZONE — มี col C=พื้นที่ เพิ่ม ทำให้ทุก col เลื่อน +1 จาก col 3 เป็นต้นไป:
+          A(1)=No. B(2)=วันที่ C(3)=พื้นที่ D(4)=JobNo E(5)=SapNo F(6)=เวลาแจ้ง
+          G(7)=สถานที่ H(8)=ปัญหา I(9)=KPI No. J(10)=เวลามาตรฐาน
+          K(11)=เวลาอนุมัติ L(12)=เวลาถึง M(13)=ผล KPI1
+          N(14)=การแก้ไข O(15)=KPI No. P(16)=เวลามาตรฐาน Q(17)=ปิดงาน
+          R(18)=ผล KPI2 S(19)=ผล KPI3 T(20)=หมายเหตุ
+        """
         from openpyxl.styles import Font, Alignment
         data_font     = Font(name='TH SarabunPSK', size=12)
-        kpi_font_pass = Font(name='TH SarabunPSK', size=10, bold=False, color='000000')  # สีดำ บาง
-        kpi_font_fail = Font(name='TH SarabunPSK', size=10, bold=False, color='000000')  # สีดำ บาง
+        kpi_font_pass = Font(name='TH SarabunPSK', size=10, bold=False, color='000000')
+        kpi_font_fail = Font(name='TH SarabunPSK', size=10, bold=False, color='000000')
         center = Alignment(horizontal='center', vertical='center')
         wrap   = Alignment(wrap_text=True, vertical='center')
 
@@ -593,61 +607,83 @@ def export_monthly():
             f = kpi_font_pass if val == 'pass' else kpi_font_fail
             set_cell(ws, r, col, kpi_sym(val), font=f, align=center)
 
-        def clear_kpi_cell(ws, r, col):
-            set_cell(ws, r, col, '', align=center)
+        # offset = 1 สำหรับ ALL_ZONE (มี col พื้นที่ เพิ่ม), 0 สำหรับ area sheets
+        o = 1 if is_all_zone else 0
 
         for i,c in enumerate(cases):
             r=3+i; std=c.get('std','')
             is_cancelled = c.get('cancelled', False)
             close_date   = c.get('closeDate','')
+            date_display = fmt_be(c.get('date','')) if c.get('date') else ''
             set_cell(ws, r,  1, c.get('seq') or (i+1))
-            set_cell(ws, r,  2, c.get('jobNo',''))
-            set_cell(ws, r,  3, c.get('sapNo',''))
-            set_cell(ws, r,  4, c.get('notifyTime',''),   align=center)
-            # col E = ตำแหน่ง/สถานที่ — ใช้ location อย่างเดียว (ไม่เติม area ซ้ำ)
-            set_cell(ws, r,  5, c.get('location',''),     align=wrap)
-            set_cell(ws, r,  6, c.get('problem',''),      align=wrap)
-            set_cell(ws, r,  7, c.get('kpiVal',''),       align=center)
-            set_cell(ws, r,  8, fmt_response_decimal(c.get('responseTime','')), align=center)
-            set_cell(ws, r,  9, c.get('approveTime',''),  align=center)
-            set_cell(ws, r, 10, c.get('arriveTime',''),   align=center)
-            set_cell(ws, r, 12, c.get('solution',''),     align=wrap)
-            set_cell(ws, r, 13, std,                      align=center)
-            set_cell(ws, r, 14, STD_HOURS.get(std,''),    align=center)
-            set_cell(ws, r, 15, c.get('closeTime',''),    align=center)
+            set_cell(ws, r,  2, date_display,              align=center)   # B = วันที่
+            if is_all_zone:
+                set_cell(ws, r,  3, c.get('area',''),      align=center)   # C = พื้นที่ (ALL_ZONE เท่านั้น)
+            set_cell(ws, r,  3+o, c.get('jobNo',''))                       # C/D = Job No.
+            set_cell(ws, r,  4+o, c.get('sapNo',''))                       # D/E = SAP No.
+            set_cell(ws, r,  5+o, c.get('notifyTime',''),  align=center)   # E/F = เวลาแจ้ง
+            set_cell(ws, r,  6+o, c.get('location',''),    align=wrap)     # F/G = สถานที่
+            set_cell(ws, r,  7+o, c.get('problem',''),     align=wrap)     # G/H = ปัญหา
+            set_cell(ws, r,  8+o, c.get('kpiVal',''),      align=center)   # H/I = KPI No.
+            set_cell(ws, r,  9+o, fmt_response_decimal(c.get('responseTime','')), align=center)  # เวลามาตรฐาน
+            set_cell(ws, r, 10+o, c.get('approveTime',''), align=center)   # เวลาอนุมัติ
+            set_cell(ws, r, 11+o, c.get('arriveTime',''),  align=center)   # เวลาถึงหน้างาน
+            set_cell(ws, r, 13+o, c.get('solution',''),    align=wrap)     # M/N = การแก้ไข
+            set_cell(ws, r, 14+o, std,                     align=center)   # N/O = KPI No. (มาตรฐาน)
+            set_cell(ws, r, 15+o, STD_HOURS.get(std,''),   align=center)   # O/P = เวลามาตรฐาน
+            set_cell(ws, r, 16+o, c.get('closeTime',''),   align=center)   # P/Q = ปิดงาน
             if is_cancelled:
-                set_kpi_cell(ws, r, 11, 'pass')   # col K KPI1 ✓
-                set_kpi_cell(ws, r, 16, 'pass')   # col P KPI2 ✓
-                set_kpi_cell(ws, r, 17, 'pass')   # col Q KPI3 ✓
-                set_cell(ws, r, 18, 'ยกเลิกใบงาน')  # col R = หมายเหตุ
+                set_kpi_cell(ws, r, 12+o, 'pass')   # L/M = ผล KPI1 ✓
+                set_kpi_cell(ws, r, 17+o, 'pass')   # Q/R = ผล KPI2 ✓
+                set_kpi_cell(ws, r, 18+o, 'pass')   # R/S = ผล KPI3 ✓
+                set_cell(ws, r, 19+o, 'ยกเลิกใบงาน')  # S/T = หมายเหตุ
             else:
-                set_kpi_cell(ws, r, 11, c.get('kpi1'))
-                set_kpi_cell(ws, r, 16, _kpi2_export(c))
-                set_kpi_cell(ws, r, 17, c.get('kpi3'))
+                set_kpi_cell(ws, r, 12+o, c.get('kpi1'))
+                set_kpi_cell(ws, r, 17+o, _kpi2_export(c))
+                set_kpi_cell(ws, r, 18+o, c.get('kpi3'))
                 if close_date and close_date != c.get('date',''):
-                    set_cell(ws, r, 18, f'ปิดงานวันที่ {fmt_be(close_date)}')
+                    set_cell(ws, r, 19+o, f'ปิดงานวันที่ {fmt_be(close_date)}')
 
     for area in areas:
         cases = sorted([c for c in cases_all if c.get('area')==area],
                        key=lambda c:(c.get('date',''), _seq_num(c)))
         area_cases[area] = cases
-        write_month_rows(wb[area], cases)
+        write_month_rows(wb[area], cases, is_all_zone=False)
 
     all_sorted = sorted([c for a in areas for c in area_cases[a]],
                         key=lambda c:(c.get('date',''), c.get('area',''), _seq_num(c)))
-    write_month_rows(wb['ALL_ZONE'], all_sorted)
+    write_month_rows(wb['ALL_ZONE'], all_sorted, is_all_zone=True)
 
     ws_mc = wb['Month CM']
     ws_mc.cell(row=7,column=5).value = month_be
     all_c = all_sorted; all_d=[c for c in all_c if c.get('closeTime')]
-    ws_mc.cell(row=13,column=8).value=len(all_c)
-    ws_mc.cell(row=14,column=8).value=len(all_d)
-    ws_mc.cell(row=15,column=8).value=len(all_c)-len(all_d)
+
+    # MN30-34: รายงานที่เกี่ยวกับเอกสาร — ลงเลข 1 ทุกรายการ (col 13 = M, merged M:N)
+    mn_rows = [30, 31, 32, 33, 34]
+    mn_val  = 1
+    for mn_r in mn_rows:
+        ws_mc.cell(row=mn_r, column=13).value = mn_val   # MN30..MN34 = 1
+
+    # H13 = ปริมาณงานทั้งหมด (เคส CM) + MN30-34 (5 รายงาน)
+    # H14 = ดำเนินการแก้ไขเสร็จแล้ว + MN30-34 (5 รายงาน ถือว่าเสร็จ)
+    mn_total = len(mn_rows) * mn_val   # = 5
+    ws_mc.cell(row=13,column=8).value = len(all_c) + mn_total
+    ws_mc.cell(row=14,column=8).value = len(all_d) + mn_total
+    ws_mc.cell(row=15,column=8).value = len(all_c) - len(all_d)   # ยังไม่เสร็จ ไม่รวม MN
+
     for area,(r1,r2,r3) in {'MTB':(18,19,20),'Z2':(21,22,23),'FZ':(24,25,26),'SAT1':(27,28,29)}.items():
         ac=area_cases[area]; ad=[c for c in ac if c.get('closeTime')]
         ws_mc.cell(row=r1,column=13).value=len(ac)
         ws_mc.cell(row=r2,column=13).value=len(ad)
         ws_mc.cell(row=r3,column=13).value=len(ac)-len(ad)
+
+    # Q30 = หัวข้อ "การจัดทำรายงานเกินมาตรฐานที่กำหนดหรือไม่"
+    # R30 = ค่า (เกิน / ไม่เกิน) default = ไม่เกิน
+    # อ่านค่าจาก request หรือ default ไม่เกิน
+    report_exceed = d.get('reportExceed', 'ไม่เกิน')   # 'เกิน' หรือ 'ไม่เกิน'
+    ws_mc.cell(row=30, column=17).value = 'การจัดทำรายงานเกินมาตรฐานที่กำหนดหรือไม่'
+    ws_mc.cell(row=30, column=18).value = report_exceed
+
     k1p=sum(1 for c in all_c if _kpi1_export(c)=='pass')
     k1f=sum(1 for c in all_c if _kpi1_export(c)=='fail')
     k2p=sum(1 for c in all_c if _kpi2_export(c)=='pass')
@@ -655,16 +691,31 @@ def export_monthly():
     k3p=sum(1 for c in all_c if _kpi3_export(c)=='pass')
     k3f=sum(1 for c in all_c if _kpi3_export(c)=='fail')
     k1t=(k1p+k1f) or 1; k2t=(k2p+k2f) or 1; k3t=(k3p+k3f) or 1
+
+    # Month CM KPI summary:
+    # ถ้า report_exceed == 'ไม่เกิน' → นับรวมใน "อยู่ในมาตรฐานกำหนด" (row 39)
+    # ถ้า report_exceed == 'เกิน'    → นับรวมใน "เกินมาตรฐานกำหนด" (row 41)
+    # +1 จาก MN30 (Q30 เป็น KPI ของการจัดทำรายงาน)
+    report_kpi_pass = 1 if report_exceed == 'ไม่เกิน' else 0
+    report_kpi_fail = 1 if report_exceed == 'เกิน'    else 0
+
+    k1p_r39 = k1p + report_kpi_pass; k1f_r41 = k1f + report_kpi_fail
+    k2p_r39 = k2p + report_kpi_pass; k2f_r41 = k2f + report_kpi_fail
+    k3p_r39 = k3p + report_kpi_pass; k3f_r41 = k3f + report_kpi_fail
+    k1t_adj = (k1p_r39 + k1f_r41) or 1
+    k2t_adj = (k2p_r39 + k2f_r41) or 1
+    k3t_adj = (k3p_r39 + k3f_r41) or 1
+
     # Month CM cell addresses ตาม Template จริง:
-    # KPI1: C39=pass count, E39=pass%, C41=fail count, E41=fail%
-    # KPI2: G39=pass count, I39=pass%, G41=fail count, I41=fail%
-    # KPI3: L39=pass count, N39=pass%, L41=fail count, N41=fail%
-    ws_mc.cell(row=39,column=3).value=k1p;   ws_mc.cell(row=39,column=5).value=round(k1p/k1t*100,1)   # C39, E39
-    ws_mc.cell(row=41,column=3).value=k1f;   ws_mc.cell(row=41,column=5).value=round(k1f/k1t*100,1)   # C41, E41
-    ws_mc.cell(row=39,column=7).value=k2p;   ws_mc.cell(row=39,column=9).value=round(k2p/k2t*100,1)   # G39, I39
-    ws_mc.cell(row=41,column=7).value=k2f;   ws_mc.cell(row=41,column=9).value=round(k2f/k2t*100,1)   # G41, I41
-    ws_mc.cell(row=39,column=12).value=k3p;  ws_mc.cell(row=39,column=14).value=round(k3p/k3t*100,1)  # L39, N39
-    ws_mc.cell(row=41,column=12).value=k3f;  ws_mc.cell(row=41,column=14).value=round(k3f/k3t*100,1)  # L41, N41
+    # KPI1: C39=pass count, E39=pass%,  C41=fail count, E41=fail%   (ทศนิยม 1 ตำแหน่ง)
+    # KPI2: G39=pass count, I39=pass%,  G41=fail count, I41=fail%
+    # KPI3: L39=pass count, N39=pass%,  L41=fail count, N41=fail%
+    ws_mc.cell(row=39,column=3).value=k1p_r39; ws_mc.cell(row=39,column=5).value=round(k1p_r39/k1t_adj*100,1)  # C39, E39
+    ws_mc.cell(row=41,column=3).value=k1f_r41; ws_mc.cell(row=41,column=5).value=round(k1f_r41/k1t_adj*100,1)  # C41, E41
+    ws_mc.cell(row=39,column=7).value=k2p_r39; ws_mc.cell(row=39,column=9).value=round(k2p_r39/k2t_adj*100,1)  # G39, I39
+    ws_mc.cell(row=41,column=7).value=k2f_r41; ws_mc.cell(row=41,column=9).value=round(k2f_r41/k2t_adj*100,1)  # G41, I41
+    ws_mc.cell(row=39,column=12).value=k3p_r39;ws_mc.cell(row=39,column=14).value=round(k3p_r39/k3t_adj*100,1) # L39, N39
+    ws_mc.cell(row=41,column=12).value=k3f_r41;ws_mc.cell(row=41,column=14).value=round(k3f_r41/k3t_adj*100,1) # L41, N41
     _add_logo_to_wb(wb, tmpl.read_bytes())
     out = io.BytesIO(); wb.save(out); out.seek(0)
     return send_file(out, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
