@@ -542,12 +542,22 @@ function kpi2Eff(c) {
   return c.kpi2 || '';
 }
 
-function calcKPI2(startTime, closeTime, std) {
+// ดึงจำนวนหลอดจาก solution text: "10หลอด" หรือ "10 หลอด" → 10, ไม่มี → 1
+function getJobCount(solution) {
+  if(!solution) return 1;
+  const m = solution.match(/(\d+)\s*หลอด/);
+  return m ? Math.max(1, parseInt(m[1], 10)) : 1;
+}
+
+function calcKPI2(startTime, closeTime, std, solution) {
   const a = toMin(startTime), b = toMin(closeTime);
   if(a === null || b === null || !std) return null;
   const diff = b >= a ? b - a : b + 1440 - a; // handle overnight
-  const lim = {A:30, B:180, C:1440, D:10080, E:20160, F:43200}[std];
-  if(!lim) return null;
+  const baseLim = {A:30, B:180, C:1440, D:10080, E:20160, F:43200}[std];
+  if(!baseLim) return null;
+  // ถ้ามีจำนวนหลอด → คูณเวลามาตรฐาน (jobCount=1 เมื่อไม่มีหลอด)
+  const jobCount = getJobCount(solution);
+  const lim = baseLim * jobCount;
   return diff <= lim ? 'pass' : 'fail';
 }
 
@@ -685,37 +695,15 @@ function parseLine() {
     receiver: extract('ผู้รับแจ้ง'),
     technician: extract('ช่างผู้ทำการซ่อม'),
     kpi1: calcKPI1(notifyTime, arriveTime, responseRaw, approveTime),
-    kpi2: calcKPI2(startTime, closeTime, std),
+    kpi2: calcKPI2(startTime, closeTime, std, extractExact('การแก้ไข')),
     kpi3: ''
   };
 
-  // ── auto-upgrade มาตรฐานเวลา เมื่อการแก้ไขมีหลอดหลายหลอด ──────────
-  // ถ้า std=A (5-30นาที) และ solution มีคำว่า "Xหลอด" ให้คำนวณเวลาจริง:
-  // เวลา A = max 30 นาที, คูณจำนวนหลอด → ถ้าผล >= 3ชม (180นาที) → C, ถ้า >= 60นาที → B
-  if(c.std === 'A') {
-    const solutionText = c.solution || '';
-    const bulbMatch = solutionText.match(/(\d+)\s*หลอด/);
-    if(bulbMatch) {
-      const bulbCount = parseInt(bulbMatch[1], 10);
-      const totalMinutes = 30 * bulbCount; // 30นาที (max ของ A) x จำนวนหลอด
-      if(totalMinutes >= 1440) {          // >= 1 วัน
-        c.std = 'D';
-      } else if(totalMinutes >= 180) {    // >= 3 ชม → C
-        c.std = 'C';
-      } else if(totalMinutes >= 60) {     // >= 1 ชม → B
-        c.std = 'B';
-      }
-      // ถ้า < 60นาที → คงเป็น A ตามเดิม
-      if(c.std !== 'A') {
-        // คำนวณ KPI2 ใหม่ด้วย std ที่ update แล้ว
-        c.kpi2 = calcKPI2(startTime, closeTime, c.std);
-        window._stdUpgradeInfo = `พบ ${bulbCount} หลอด → 30นาที × ${bulbCount} = ${totalMinutes}นาที → ปรับมาตรฐานเวลาเป็น ${c.std} อัตโนมัติ`;
-      } else {
-        window._stdUpgradeInfo = null;
-      }
-    } else {
-      window._stdUpgradeInfo = null;
-    }
+  // ── แสดง banner จำนวนหลอด (jobCount) ──────────────────────────
+  const jobCount = getJobCount(c.solution);
+  if(jobCount > 1) {
+    const baseLim = {A:30,B:180,C:1440,D:10080,E:20160,F:43200}[c.std] || 0;
+    window._stdUpgradeInfo = `💡 พบ ${jobCount} หลอด → มาตรฐาน ${c.std} (${baseLim}นาที) × ${jobCount} = ${baseLim*jobCount}นาที → คำนวณ KPI2 จาก ${baseLim*jobCount}นาที`;
   } else {
     window._stdUpgradeInfo = null;
   }
@@ -848,7 +836,7 @@ async function saveCase() {
     receiver: document.getElementById('f-receiver').value,
     technician: document.getElementById('f-technician').value,
     kpi1: calcKPI1(document.getElementById('f-notify-time').value, arriveTime, document.getElementById('f-response-time').value, approveTime),
-    kpi2: calcKPI2(startTime, closeTime, std),
+    kpi2: calcKPI2(startTime, closeTime, std, document.getElementById('f-solution').value),
     kpi3: document.getElementById('f-kpi3').value
   };
   try {
@@ -1098,7 +1086,7 @@ async function saveEdit() {
     c.kpi1 = ''; c.kpi2 = ''; c.kpi3 = '';
   } else {
     c.kpi1 = calcKPI1(c.notifyTime, c.arriveTime, c.responseTime, c.approveTime);
-    c.kpi2 = calcKPI2(c.startTime, c.closeTime, c.std);
+    c.kpi2 = calcKPI2(c.startTime, c.closeTime, c.std, c.solution);
   }
   try {
     const updated = await apiPut(`/api/cases/${editingId}`, c);
