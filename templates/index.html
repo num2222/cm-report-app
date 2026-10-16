@@ -1067,10 +1067,15 @@ function openEdit(id) {
 
   document.getElementById('edit-form-fields').innerHTML = html;
 
-  // ── ถ้า jobCount ยังเป็น 0 หรือไม่มีค่า → ดึงจาก solution ──
+  // ── ตั้งค่า jobCount เริ่มต้น:
+  // ถ้า solution มีจำนวนหลอด → ใช้ค่านั้นก่อนเสมอ (override DB default=1)
+  // ถ้า user เคยแก้ jobCount เป็นค่าอื่นที่ไม่ใช่ default → ใช้ค่า DB
   const jcEl = document.getElementById('edit-jobCount');
-  if(jcEl && (!c.jobCount || c.jobCount <= 0)) {
-    jcEl.value = getJobCount(c.solution || '');
+  if(jcEl) {
+    const fromSolution = getJobCount(c.solution || '');
+    // ใช้ค่าจาก solution ถ้า > 1, หรือถ้า DB เก็บ > 1 (user เคยแก้ไว้)
+    const dbVal = parseInt(c.jobCount) || 1;
+    jcEl.value = fromSolution > 1 ? fromSolution : dbVal;
   }
 
   // ── banner แสดง jobCount × std → KPI2 limit ──
