@@ -76,6 +76,7 @@ class Case(db.Model):
     pending_reason  = db.Column(db.Text)
     # ── ยกเลิกใบงาน ───────────────────────────────────────
     cancelled     = db.Column(db.Boolean, default=False)
+    job_count     = db.Column(db.Integer, default=1)
     created_at    = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at    = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -96,6 +97,7 @@ class Case(db.Model):
             'sapFailReason': self.sap_fail_reason or '',
             'pendingReason': self.pending_reason or '',
             'cancelled': bool(self.cancelled),
+            'jobCount': self.job_count if self.job_count is not None else 1,
         }
 
 with app.app_context():
@@ -107,6 +109,7 @@ with app.app_context():
         "ALTER TABLE cases ADD COLUMN IF NOT EXISTS pending_reason TEXT",
         "ALTER TABLE cases ADD COLUMN IF NOT EXISTS cancelled BOOLEAN DEFAULT FALSE",
         "ALTER TABLE cases ADD COLUMN IF NOT EXISTS close_date VARCHAR(10)",
+        "ALTER TABLE cases ADD COLUMN IF NOT EXISTS job_count INTEGER DEFAULT 1",
     ]
     try:
         with db.engine.connect() as conn:
@@ -236,6 +239,9 @@ def apply_dict(c, d):
     c.kpi1         = d.get('kpi1','')
     c.kpi2         = d.get('kpi2','')
     c.kpi3         = d.get('kpi3','')
+    # jobCount: ใช้ค่าที่ส่งมาจาก frontend (แก้ได้อิสระ), fallback=1
+    try:    c.job_count = max(1, int(d.get('jobCount', 1) or 1))
+    except: c.job_count = 1
 
     # ── ปิด SAP: auto-set สถานะตามว่ามี SAP No. หรือไม่ ──────
     # ถ้า frontend ส่ง sapStatus มาตรงๆ (กรณีแก้ไขในหน้า "ปิด SAP") ให้ใช้ตามนั้น
