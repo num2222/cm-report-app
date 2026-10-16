@@ -177,12 +177,12 @@ textarea.paste-box { width: 100%; height: 200px; font-family: 'Courier New', mon
         <div class="form-group"><label>มาตรฐานเวลา</label>
           <select id="f-std">
             <option value="">-- เลือก --</option>
-            <option value="A">A = 5-30 นาที</option>
-            <option value="B">B = 1-3 ชม.</option>
-            <option value="C">C = 3 ชม. - 1 วัน</option>
-            <option value="D">D = 1-7 วัน</option>
-            <option value="E">E = 7-14 วัน</option>
-            <option value="F">F = 1 เดือน</option>
+            <option value="A">A = (5-30นาที)</option>
+            <option value="B">B = (1-3ชม)</option>
+            <option value="C">C = (3ชม-1วัน)</option>
+            <option value="D">D = (1-7วัน)</option>
+            <option value="E">E = (7-14วัน)</option>
+            <option value="F">F = (1เดือน)</option>
           </select>
         </div>
         <div class="form-group"><label>เวลาอนุมัติการซ่อม</label><input type="time" id="f-approve-time"></div>
@@ -683,6 +683,38 @@ function parseLine() {
     kpi2: calcKPI2(startTime, closeTime, std),
     kpi3: ''
   };
+
+  // ── auto-upgrade มาตรฐานเวลา เมื่อการแก้ไขมีหลอดหลายหลอด ──────────
+  // ถ้า std=A (5-30นาที) และ solution มีคำว่า "Xหลอด" ให้คำนวณเวลาจริง:
+  // เวลา A = max 30 นาที, คูณจำนวนหลอด → ถ้าผล >= 3ชม (180นาที) → C, ถ้า >= 60นาที → B
+  if(c.std === 'A') {
+    const solutionText = c.solution || '';
+    const bulbMatch = solutionText.match(/(\d+)\s*หลอด/);
+    if(bulbMatch) {
+      const bulbCount = parseInt(bulbMatch[1], 10);
+      const totalMinutes = 30 * bulbCount; // 30นาที (max ของ A) x จำนวนหลอด
+      if(totalMinutes >= 1440) {          // >= 1 วัน
+        c.std = 'D';
+      } else if(totalMinutes >= 180) {    // >= 3 ชม → C
+        c.std = 'C';
+      } else if(totalMinutes >= 60) {     // >= 1 ชม → B
+        c.std = 'B';
+      }
+      // ถ้า < 60นาที → คงเป็น A ตามเดิม
+      if(c.std !== 'A') {
+        // คำนวณ KPI2 ใหม่ด้วย std ที่ update แล้ว
+        c.kpi2 = calcKPI2(startTime, closeTime, c.std);
+        window._stdUpgradeInfo = `พบ ${bulbCount} หลอด → 30นาที × ${bulbCount} = ${totalMinutes}นาที → ปรับมาตรฐานเวลาเป็น ${c.std} อัตโนมัติ`;
+      } else {
+        window._stdUpgradeInfo = null;
+      }
+    } else {
+      window._stdUpgradeInfo = null;
+    }
+  } else {
+    window._stdUpgradeInfo = null;
+  }
+
   window._pendingCase = c;
 
   // ── ตรวจสอบความผิดปกติของข้อมูลที่ parse ได้ ──────────
@@ -713,9 +745,12 @@ function parseLine() {
   const warningHtml = warnings.length
     ? `<div class="alert alert-error">⚠️ พบข้อมูลที่อาจ parse ผิด กรุณาตรวจสอบก่อนบันทึก:<br>${warnings.map(w=>'• '+w).join('<br>')}<br><br>แนะนำให้สลับไปแท็บ "กรอกเอง" แล้วแก้ไขค่าที่ผิดด้วยมือ</div>`
     : '';
+  const stdUpgradeHtml = window._stdUpgradeInfo
+    ? `<div class="alert alert-info">💡 ${window._stdUpgradeInfo}</div>`
+    : '';
   document.getElementById('parse-result').innerHTML = `
     <div class="parsed-preview">
-      ${warningHtml}
+      ${warningHtml}${stdUpgradeHtml}
       <div style="font-weight:600;margin-bottom:8px;color:#1a3a5c;">📋 ตรวจสอบข้อมูล:</div>
       <div class="parsed-row">${Object.entries(fields).map(([k,v])=>`<div class="parsed-field"><span>${k}:</span> ${v||'—'}</div>`).join('')}</div>
       <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
@@ -997,7 +1032,7 @@ function openEdit(id) {
     ['notifyTime','เวลารับแจ้ง','time',null],
     ['kpiVal','KPI (ค่า)','text',null],
     ['responseTime','เวลาตอบรับ','text',null],
-    ['std','มาตรฐานเวลา','select',['','A','B','C','D','E','F']],
+    ['std','มาตรฐานเวลา','select',[['','-- ยังไม่กำหนด --'],['A','A=(5-30นาที)'],['B','B=(1-3ชม)'],['C','C=(3ชม-1วัน)'],['D','D=(1-7วัน)'],['E','E=(7-14วัน)'],['F','F=(1เดือน)']]],
     ['approveTime','เวลาอนุมัติการซ่อม','time',null],
     ['arriveTime','เวลาที่ถึงหน้างาน','time',null],
     ['startTime','เวลาเริ่มการแก้ไข','time',null],
@@ -1014,7 +1049,11 @@ function openEdit(id) {
   let html = fields.map(([key,label,type,opts])=>{
     const val = c[key] || '';
     if(type === 'select') {
-      return `<div class="form-group"><label>${label}</label><select id="edit-${key}">${(opts||[]).map(o=>`<option value="${o}"${o===val?' selected':''}>${o||'-- ยังไม่กำหนด --'}</option>`).join('')}</select></div>`;
+      const optHtml = (opts||[]).map(o=>{
+        const [ov,ol] = Array.isArray(o) ? o : [o,o||'-- ยังไม่กำหนด --'];
+        return `<option value="${ov}"${ov===val?' selected':''}>${ol}</option>`;
+      }).join('');
+      return `<div class="form-group"><label>${label}</label><select id="edit-${key}">${optHtml}</select></div>`;
     }
     return `<div class="form-group"><label>${label}</label><input type="${type}" id="edit-${key}" value="${val}"></div>`;
   }).join('');
