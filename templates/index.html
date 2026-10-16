@@ -264,6 +264,11 @@ textarea.paste-box { width: 100%; height: 200px; font-family: 'Courier New', mon
       <option value="ALL">ทุกพื้นที่</option><option value="MTB">MTB</option><option value="Z2">Z2</option><option value="FZ">FZ</option><option value="SAT1">SAT1</option>
     </select>
     <button class="btn btn-outline btn-sm" onclick="exportMonthlyCSV()">📥 CSV</button>
+    <label style="font-size:12px;color:#555;">การจัดทำรายงาน</label>
+    <select id="report-exceed" style="padding:6px 10px;border:1px solid #ccd4de;border-radius:6px;font-size:13px;font-family:inherit;">
+      <option value="ไม่เกิน" selected>ไม่เกินมาตรฐาน</option>
+      <option value="เกิน">เกินมาตรฐาน</option>
+    </select>
     <button class="btn btn-success btn-sm" onclick="exportMonthlyExcel(event)">📊 Export Excel</button>
   </div>
   <div id="summary-content"></div>
@@ -1790,10 +1795,11 @@ async function exportMonthlyExcel(ev) {
   }
   if(btn) { btn.textContent = '⏳ Export...'; }
   try {
+    const reportExceed = (document.getElementById('report-exceed')?.value) || 'ไม่เกิน';
     const resp = await fetch('/api/export/monthly', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({cases, month})
+      body: JSON.stringify({cases, month, reportExceed})
     });
     if(resp.status === 401) { window.location.href = '/login'; return; }
     if(!resp.ok) throw new Error(await resp.text());
