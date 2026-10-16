@@ -549,15 +549,14 @@ function getJobCount(solution) {
   return m ? Math.max(1, parseInt(m[1], 10)) : 1;
 }
 
-function calcKPI2(startTime, closeTime, std, solution) {
+function calcKPI2(startTime, closeTime, std, jobCount) {
   const a = toMin(startTime), b = toMin(closeTime);
   if(a === null || b === null || !std) return null;
   const diff = b >= a ? b - a : b + 1440 - a; // handle overnight
   const baseLim = {A:30, B:180, C:1440, D:10080, E:20160, F:43200}[std];
   if(!baseLim) return null;
-  // ถ้ามีจำนวนหลอด → คูณเวลามาตรฐาน (jobCount=1 เมื่อไม่มีหลอด)
-  const jobCount = getJobCount(solution);
-  const lim = baseLim * jobCount;
+  const jc = Math.max(1, parseInt(jobCount) || 1);
+  const lim = baseLim * jc;
   return diff <= lim ? 'pass' : 'fail';
 }
 
@@ -695,12 +694,14 @@ function parseLine() {
     receiver: extract('ผู้รับแจ้ง'),
     technician: extract('ช่างผู้ทำการซ่อม'),
     kpi1: calcKPI1(notifyTime, arriveTime, responseRaw, approveTime),
-    kpi2: calcKPI2(startTime, closeTime, std, extractExact('การแก้ไข')),
     kpi3: ''
   };
 
-  // ── แสดง banner จำนวนหลอด (jobCount) ──────────────────────────
+  // ── jobCount: อ้างอิงจาก solution ก่อน (แก้ได้ภายหลัง) ──────
   const jobCount = getJobCount(c.solution);
+  c.jobCount = jobCount;
+  c.kpi2 = calcKPI2(startTime, closeTime, std, jobCount);
+
   if(jobCount > 1) {
     const baseLim = {A:30,B:180,C:1440,D:10080,E:20160,F:43200}[c.std] || 0;
     window._stdUpgradeInfo = `💡 พบ ${jobCount} หลอด → มาตรฐาน ${c.std} (${baseLim}นาที) × ${jobCount} = ${baseLim*jobCount}นาที → คำนวณ KPI2 จาก ${baseLim*jobCount}นาที`;
@@ -836,7 +837,7 @@ async function saveCase() {
     receiver: document.getElementById('f-receiver').value,
     technician: document.getElementById('f-technician').value,
     kpi1: calcKPI1(document.getElementById('f-notify-time').value, arriveTime, document.getElementById('f-response-time').value, approveTime),
-    kpi2: calcKPI2(startTime, closeTime, std, document.getElementById('f-solution').value),
+    kpi2: calcKPI2(startTime, closeTime, std, getJobCount(document.getElementById('f-solution').value)),
     kpi3: document.getElementById('f-kpi3').value
   };
   try {
@@ -1035,6 +1036,7 @@ function openEdit(id) {
     ['location','บริเวณ / สถานที่','text',null],
     ['problem','ปัญหาหน้างาน','text',null],
     ['solution','การแก้ไข','text',null],
+    ['jobCount','จำนวน Job (หลอด/งาน)','number',null],
     ['technician','ช่างผู้ซ่อม','text',null],
     ['reporter','ผู้แจ้ง','text',null],
     ['receiver','ผู้รับแจ้ง','text',null],
@@ -1065,11 +1067,16 @@ function openEdit(id) {
 
   document.getElementById('edit-form-fields').innerHTML = html;
 
-  // ── แสดง jobCount banner ตามค่า solution ปัจจุบัน ──
+  // ── ถ้า jobCount ยังเป็น 0 หรือไม่มีค่า → ดึงจาก solution ──
+  const jcEl = document.getElementById('edit-jobCount');
+  if(jcEl && (!c.jobCount || c.jobCount <= 0)) {
+    jcEl.value = getJobCount(c.solution || '');
+  }
+
+  // ── banner แสดง jobCount × std → KPI2 limit ──
   function updateJobBanner() {
-    const sol = document.getElementById('edit-solution')?.value || '';
+    const jc  = Math.max(1, parseInt(document.getElementById('edit-jobCount')?.value) || 1);
     const std = document.getElementById('edit-std')?.value || '';
-    const jc = getJobCount(sol);
     const baseLim = {A:30,B:180,C:1440,D:10080,E:20160,F:43200}[std] || 0;
     let banner = document.getElementById('edit-job-banner');
     if(!banner) {
@@ -1082,13 +1089,19 @@ function openEdit(id) {
       banner.style.background = '#fff3cd';
       banner.style.color = '#856404';
       banner.style.display = 'block';
-      banner.textContent = `💡 พบ ${jc} หลอด → มาตรฐาน ${std} (${baseLim}นาที) × ${jc} = ${baseLim*jc}นาที → คำนวณ KPI2 จาก ${baseLim*jc}นาที`;
+      banner.textContent = `💡 จำนวน Job = ${jc} → มาตรฐาน ${std} (${baseLim}นาที) × ${jc} = ${baseLim*jc}นาที → คำนวณ KPI2 จาก ${baseLim*jc}นาที`;
     } else {
       banner.style.display = 'none';
     }
   }
   updateJobBanner();
-  document.getElementById('edit-solution')?.addEventListener('input', updateJobBanner);
+  document.getElementById('edit-jobCount')?.addEventListener('input', updateJobBanner);
+  document.getElementById('edit-solution')?.addEventListener('input', () => {
+    // เมื่อแก้ solution → อัปเดต jobCount อัตโนมัติก็ต่อเมื่อ user ยังไม่ได้แก้ jobCount เอง
+    const sol = document.getElementById('edit-solution')?.value || '';
+    const jcField = document.getElementById('edit-jobCount');
+    if(jcField) { jcField.value = getJobCount(sol); updateJobBanner(); }
+  });
   document.getElementById('edit-std')?.addEventListener('change', updateJobBanner);
 
   document.getElementById('edit-modal').classList.add('open');
@@ -1099,7 +1112,7 @@ async function saveEdit() {
   if(!c) return;
   const keys = ['area','date','seq','jobNo','sapNo','notifyTime','kpiVal','responseTime','std',
                 'approveTime','arriveTime','startTime','closeTime','closeDate','kpi3',
-                'location','problem','solution','technician','reporter','receiver'];
+                'location','problem','solution','jobCount','technician','reporter','receiver'];
   keys.forEach(f => { const el = document.getElementById('edit-'+f); if(el) c[f] = el.value; });
 
   // ── ยกเลิกใบงาน ─────────────────────────────────────────────
@@ -1113,7 +1126,7 @@ async function saveEdit() {
     c.kpi1 = ''; c.kpi2 = ''; c.kpi3 = '';
   } else {
     c.kpi1 = calcKPI1(c.notifyTime, c.arriveTime, c.responseTime, c.approveTime);
-    c.kpi2 = calcKPI2(c.startTime, c.closeTime, c.std, c.solution);
+    c.kpi2 = calcKPI2(c.startTime, c.closeTime, c.std, c.jobCount);
   }
   try {
     const updated = await apiPut(`/api/cases/${editingId}`, c);
