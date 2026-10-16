@@ -1064,6 +1064,33 @@ function openEdit(id) {
   </div>`;
 
   document.getElementById('edit-form-fields').innerHTML = html;
+
+  // ── แสดง jobCount banner ตามค่า solution ปัจจุบัน ──
+  function updateJobBanner() {
+    const sol = document.getElementById('edit-solution')?.value || '';
+    const std = document.getElementById('edit-std')?.value || '';
+    const jc = getJobCount(sol);
+    const baseLim = {A:30,B:180,C:1440,D:10080,E:20160,F:43200}[std] || 0;
+    let banner = document.getElementById('edit-job-banner');
+    if(!banner) {
+      banner = document.createElement('div');
+      banner.id = 'edit-job-banner';
+      banner.style.cssText = 'grid-column:1/-1;padding:8px 12px;border-radius:6px;font-size:13px;margin-top:4px;';
+      document.getElementById('edit-form-fields').appendChild(banner);
+    }
+    if(jc > 1 && baseLim) {
+      banner.style.background = '#fff3cd';
+      banner.style.color = '#856404';
+      banner.style.display = 'block';
+      banner.textContent = `💡 พบ ${jc} หลอด → มาตรฐาน ${std} (${baseLim}นาที) × ${jc} = ${baseLim*jc}นาที → คำนวณ KPI2 จาก ${baseLim*jc}นาที`;
+    } else {
+      banner.style.display = 'none';
+    }
+  }
+  updateJobBanner();
+  document.getElementById('edit-solution')?.addEventListener('input', updateJobBanner);
+  document.getElementById('edit-std')?.addEventListener('change', updateJobBanner);
+
   document.getElementById('edit-modal').classList.add('open');
 }
 
