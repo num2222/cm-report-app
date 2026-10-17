@@ -1220,14 +1220,18 @@ def confirm_pending_case(pid):
 
     # แปลง jobCode → area + วันที่
     job_code = d.get('jobCode', '')
-    area = job_code.split('_')[0] if '_' in job_code else job_code
+    prefix = job_code.split('_')[0].upper() if '_' in job_code else job_code.upper()
+    AREA_MAP = {'MTB': 'MTB', 'Z3': 'Z2', 'FZ': 'FZ', 'SAT-1': 'SAT1', 'SAT1': 'SAT1'}
+    area = AREA_MAP.get(prefix, prefix)
     report_date = d.get('reportDate') or datetime.utcnow().strftime('%Y-%m-%d')
+
+    seq = d.get('seq', '')
 
     new_case = Case(
         id           = gen_id(),
         area         = area,
         date         = report_date,
-        seq          = d.get('seq', ''),
+        seq          = seq,
         job_no       = d.get('workOrderNo', ''),
         sap_no       = d.get('sapNo', ''),
         notify_time  = d.get('notifyTime', ''),
