@@ -102,6 +102,7 @@ textarea.paste-box { width: 100%; height: 200px; font-family: 'Courier New', mon
   <button class="nav-btn" onclick="showPage('yearsummary',this)">สรุปรายปี</button>
   <button class="nav-btn" onclick="showPage('pending',this)">ค้างดำเนินการ</button>
   <button class="nav-btn" onclick="showPage('sapclose',this)">ปิด SAP</button>
+  <button class="nav-btn" onclick="showPage('lineimport',this)" id="nav-lineimport">📥 รอยืนยัน <span id="pending-badge" style="display:none;background:#e53935;color:#fff;border-radius:10px;padding:1px 6px;font-size:11px;margin-left:4px;"></span></button>
   <div style="margin-left:auto;display:flex;align-items:center;gap:4px;">
     <button onclick="doBackup()" title="💾 Backup ข้อมูลทั้งหมดเป็น JSON"
       style="background:none;border:none;cursor:pointer;font-size:18px;opacity:0.6;padding:4px 6px;line-height:1;"
@@ -300,6 +301,15 @@ textarea.paste-box { width: 100%; height: 200px; font-family: 'Courier New', mon
   <div id="pending-content"></div>
 </div>
 
+<!-- LINE IMPORT — รายการรอยืนยัน -->
+<div id="page-lineimport" class="page">
+  <div class="section-title">
+    <span>📥 รายการรอยืนยันจาก Line</span>
+    <button class="btn btn-sm" onclick="loadPendingFromLine()" style="background:#1a3a5c;color:#fff;">🔄 รีเฟรช</button>
+  </div>
+  <div id="line-pending-list" style="margin-top:8px;"></div>
+</div>
+
 <!-- SAP CLOSE -->
 <div id="page-sapclose" class="page">
   <div class="date-filter">
@@ -472,6 +482,7 @@ function showPage(p, btn) {
     if(p==='yearsummary') renderYearSummary();
     if(p==='pending') renderPending();
     if(p==='sapclose') renderSapClose();
+    if(p==='lineimport') loadPendingFromLine();
   });
 }
 function showTab(t) {
@@ -1921,6 +1932,112 @@ async function doImport(input) {
   }
 }
 
+// ═══════════════════════════════════════════════════════════════
+// LINE IMPORT — รายการรอยืนยัน
+// ═══════════════════════════════════════════════════════════════
+
+async function loadPendingFromLine() {
+  const el = document.getElementById('line-pending-list');
+  el.innerHTML = '<p style="color:#666;padding:12px;">กำลังโหลด...</p>';
+  try {
+    const res = await fetch('/api/pending-cases');
+    if (!res.ok) throw new Error(await res.text());
+    const rows = await res.json();
+
+    // อัปเดต badge จำนวน
+    const badge = document.getElementById('pending-badge');
+    if (rows.length > 0) {
+      badge.textContent = rows.length;
+      badge.style.display = 'inline';
+    } else {
+      badge.style.display = 'none';
+    }
+
+    if (rows.length === 0) {
+      el.innerHTML = '<p style="color:#888;padding:12px;">ไม่มีรายการรอยืนยัน</p>';
+      return;
+    }
+
+    const cards = rows.map(r => {
+      const d = r.data || {};
+      const updated = r.updatedAt ? r.updatedAt.slice(11,16) : '';
+      const created = r.createdAt ? r.createdAt.slice(0,16).replace('T',' ') : '';
+      const hasClose = d.closeTime ? `<span style="color:#1a7f4b;">✓ ปิดงาน ${d.closeTime}</span>` : `<span style="color:#999;">ยังไม่ปิดงาน</span>`;
+      return `
+      <div style="border:1px solid #dde4ed;border-radius:8px;padding:14px;margin-bottom:12px;background:#fff;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+          <div>
+            <strong style="font-size:15px;color:#1a3a5c;">${r.jobCode}</strong>
+            <span style="margin-left:8px;color:#666;font-size:12px;">${r.reportDate || ''}</span>
+            <span style="margin-left:8px;font-size:12px;">${hasClose}</span>
+          </div>
+          <div style="font-size:11px;color:#999;">อัปเดต ${updated || created}</div>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:4px 16px;font-size:12px;color:#444;margin-bottom:10px;">
+          <div>📋 ใบงาน: <strong>${d.workOrderNo||'-'}</strong></div>
+          <div>🔧 SAP: <strong>${d.sapNo||'-'}</strong></div>
+          <div>⏰ รับแจ้ง: ${d.notifyTime||'-'}</div>
+          <div>⏰ อนุมัติ: ${d.approveTime||'-'}</div>
+          <div>🚗 ถึงหน้างาน: ${d.arriveTime||'-'}</div>
+          <div>🔨 เริ่มแก้ไข: ${d.startTime||'-'}</div>
+          <div>✅ ปิดงาน: ${d.closeTime||'-'}</div>
+          <div>📊 Std: ${d.std||'-'}</div>
+          <div colspan="2">👷 ช่าง: ${d.technician||'-'}</div>
+        </div>
+        <div style="font-size:12px;color:#555;margin-bottom:8px;">
+          📍 ${d.area||''} ${d.location||''}<br>
+          🔴 ปัญหา: ${d.problem||'-'}<br>
+          🔧 แก้ไข: ${d.solution||'-'}
+        </div>
+        <div style="display:flex;gap:8px;">
+          <button class="btn btn-success btn-sm" onclick="confirmPendingLine(${r.id})">✅ ยืนยัน สร้างเคส</button>
+          <button class="btn btn-sm" style="background:#e53935;color:#fff;" onclick="deletePendingLine(${r.id})">🗑️ ลบ</button>
+        </div>
+      </div>`;
+    }).join('');
+    el.innerHTML = cards;
+  } catch(e) {
+    el.innerHTML = `<p style="color:red;">โหลดไม่สำเร็จ: ${e.message}</p>`;
+  }
+}
+
+async function confirmPendingLine(id) {
+  if (!confirm('ยืนยันสร้างเคสจากรายการนี้?')) return;
+  try {
+    const res = await fetch(`/api/pending-cases/${id}/confirm`, { method: 'POST' });
+    const j   = await res.json();
+    if (!res.ok) throw new Error(j.error || res.status);
+    alert('✅ สร้างเคสสำเร็จ! Case ID: ' + (j.caseId || ''));
+    await loadAllCases();
+    loadPendingFromLine();
+  } catch(e) {
+    alert('ไม่สำเร็จ: ' + e.message);
+  }
+}
+
+async function deletePendingLine(id) {
+  if (!confirm('ลบรายการนี้ทิ้ง?')) return;
+  try {
+    const res = await fetch(`/api/pending-cases/${id}`, { method: 'DELETE' });
+    if (!res.ok) throw new Error(await res.text());
+    loadPendingFromLine();
+  } catch(e) {
+    alert('ไม่สำเร็จ: ' + e.message);
+  }
+}
+
+// โหลด badge จำนวน pending เมื่อเปิดหน้า
+async function refreshPendingBadge() {
+  try {
+    const res = await fetch('/api/pending-cases');
+    if (!res.ok) return;
+    const rows = await res.json();
+    const badge = document.getElementById('pending-badge');
+    if (rows.length > 0) { badge.textContent = rows.length; badge.style.display = 'inline'; }
+    else badge.style.display = 'none';
+  } catch(e) {}
+}
+
 window.onload = async () => {
   const today = new Date().toISOString().slice(0, 10);
   const thisMonth = today.slice(0, 7);
@@ -1932,6 +2049,9 @@ window.onload = async () => {
   await loadAllCases();
   hideLoading();
   renderDashboard();
+  refreshPendingBadge();
+  // รีเฟรช badge ทุก 2 นาที
+  setInterval(refreshPendingBadge, 120000);
 };
 </script>
 </body>
