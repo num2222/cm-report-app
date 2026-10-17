@@ -80,18 +80,6 @@ class Case(db.Model):
     created_at    = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at    = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
-
-class PendingCase(db.Model):
-    """เคสที่รับมาจาก Line Bot รอการยืนยันก่อนเข้า Case จริง"""
-    __tablename__ = 'pending_cases'
-    id          = db.Column(db.Integer, primary_key=True, autoincrement=True)
-    job_code    = db.Column(db.String(50), index=True)   # เช่น MTB_01
-    report_date = db.Column(db.String(10), index=True)   # YYYY-MM-DD
-    raw_data    = db.Column(db.Text)                     # JSON ทั้งก้อนจาก Bot
-    confirmed   = db.Column(db.Boolean, default=False)
-    created_at  = db.Column(db.DateTime, default=datetime.utcnow)
-    updated_at  = db.Column(db.DateTime, default=datetime.utcnow)
-
     def to_dict(self):
         return {
             'id': self.id, 'area': self.area, 'date': self.date,
@@ -111,6 +99,18 @@ class PendingCase(db.Model):
             'cancelled': bool(self.cancelled),
             'jobCount': self.job_count if self.job_count is not None else 1,
         }
+
+
+class PendingCase(db.Model):
+    """เคสที่รับมาจาก Line Bot รอการยืนยันก่อนเข้า Case จริง"""
+    __tablename__ = 'pending_cases'
+    id          = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    job_code    = db.Column(db.String(50), index=True)   # เช่น MTB_01
+    report_date = db.Column(db.String(10), index=True)   # YYYY-MM-DD
+    raw_data    = db.Column(db.Text)                     # JSON ทั้งก้อนจาก Bot
+    confirmed   = db.Column(db.Boolean, default=False)
+    created_at  = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at  = db.Column(db.DateTime, default=datetime.utcnow)
 
 with app.app_context():
     db.create_all()
