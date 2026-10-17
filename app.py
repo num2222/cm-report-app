@@ -80,6 +80,18 @@ class Case(db.Model):
     created_at    = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at    = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
+
+class PendingCase(db.Model):
+    """เคสที่รับมาจาก Line Bot รอการยืนยันก่อนเข้า Case จริง"""
+    __tablename__ = 'pending_cases'
+    id          = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    job_code    = db.Column(db.String(50), index=True)   # เช่น MTB_01
+    report_date = db.Column(db.String(10), index=True)   # YYYY-MM-DD
+    raw_data    = db.Column(db.Text)                     # JSON ทั้งก้อนจาก Bot
+    confirmed   = db.Column(db.Boolean, default=False)
+    created_at  = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at  = db.Column(db.DateTime, default=datetime.utcnow)
+
     def to_dict(self):
         return {
             'id': self.id, 'area': self.area, 'date': self.date,
@@ -110,6 +122,16 @@ with app.app_context():
         "ALTER TABLE cases ADD COLUMN IF NOT EXISTS cancelled BOOLEAN DEFAULT FALSE",
         "ALTER TABLE cases ADD COLUMN IF NOT EXISTS close_date VARCHAR(10)",
         "ALTER TABLE cases ADD COLUMN IF NOT EXISTS job_count INTEGER DEFAULT 1",
+        # pending_cases table จะถูกสร้างโดย db.create_all() แต่เผื่อไว้
+        """CREATE TABLE IF NOT EXISTS pending_cases (
+            id SERIAL PRIMARY KEY,
+            job_code VARCHAR(50),
+            report_date VARCHAR(10),
+            raw_data TEXT,
+            confirmed BOOLEAN DEFAULT FALSE,
+            created_at TIMESTAMP DEFAULT NOW(),
+            updated_at TIMESTAMP DEFAULT NOW()
+        )""",
     ]
     try:
         with db.engine.connect() as conn:
@@ -1109,6 +1131,133 @@ def import_db():
         errors=errors,
         total_in_db=Case.query.count()
     )
+
+
+# ═══════════════════════════════════════════════════════════════════
+# LINE BOT INTEGRATION — รับข้อมูลเคสจาก Bot → pending cases
+# ═══════════════════════════════════════════════════════════════════
+
+def _cm_api_key_required(f):
+    """decorator: ตรวจ X-Api-Key header สำหรับ endpoint ที่ Bot เรียก"""
+    from functools import wraps
+    @wraps(f)
+    def wrapper(*args, **kwargs):
+        key = request.headers.get('X-Api-Key', '')
+        if not key or key != os.environ.get('CM_API_KEY', ''):
+            return jsonify(error='unauthorized'), 401
+        return f(*args, **kwargs)
+    return wrapper
+
+
+@app.route('/api/line-import', methods=['POST'])
+@_cm_api_key_required
+def line_import():
+    """รับข้อมูลเคสจาก Line Bot — สร้างหรืออัปเดต pending case"""
+    d = request.json or {}
+    job_code    = (d.get('jobCode') or '').strip()
+    report_date = (d.get('reportDate') or '').strip()
+
+    if not job_code:
+        return jsonify(error='jobCode required'), 400
+
+    # หา pending ที่ยังไม่ confirm (job_code + วันที่เดิม)
+    existing = PendingCase.query.filter_by(
+        job_code=job_code,
+        report_date=report_date,
+        confirmed=False
+    ).first()
+
+    if existing:
+        # merge ข้อมูลใหม่ทับเฉพาะ field ที่ไม่ว่าง
+        old = json.loads(existing.raw_data or '{}')
+        for k, v in d.items():
+            if v:  # เขียนทับเฉพาะค่าที่มีข้อมูล
+                old[k] = v
+        existing.raw_data   = json.dumps(old, ensure_ascii=False)
+        existing.updated_at = datetime.utcnow()
+        db.session.commit()
+        return jsonify(action='updated', id=existing.id)
+    else:
+        pc = PendingCase(
+            job_code    = job_code,
+            report_date = report_date,
+            raw_data    = json.dumps(d, ensure_ascii=False)
+        )
+        db.session.add(pc)
+        db.session.commit()
+        return jsonify(action='created', id=pc.id)
+
+
+@app.route('/api/pending-cases', methods=['GET'])
+@login_required
+def get_pending_cases():
+    """ดึงรายการ pending cases ที่ยังไม่ confirm"""
+    rows = PendingCase.query.filter_by(confirmed=False)\
+                            .order_by(PendingCase.created_at.desc()).all()
+    result = []
+    for r in rows:
+        data = json.loads(r.raw_data or '{}')
+        result.append({
+            'id':          r.id,
+            'jobCode':     r.job_code,
+            'reportDate':  r.report_date,
+            'updatedAt':   r.updated_at.strftime('%Y-%m-%d %H:%M:%S') if r.updated_at else '',
+            'createdAt':   r.created_at.strftime('%Y-%m-%d %H:%M:%S') if r.created_at else '',
+            'data':        data,
+        })
+    return jsonify(result)
+
+
+@app.route('/api/pending-cases/<int:pid>/confirm', methods=['POST'])
+@login_required
+def confirm_pending_case(pid):
+    """ยืนยัน pending case → สร้าง Case จริงในฐานข้อมูล"""
+    pc = PendingCase.query.get_or_404(pid)
+    if pc.confirmed:
+        return jsonify(error='already confirmed'), 400
+
+    d = json.loads(pc.raw_data or '{}')
+
+    # แปลง jobCode → area + วันที่
+    job_code = d.get('jobCode', '')
+    area = job_code.split('_')[0] if '_' in job_code else job_code
+    report_date = d.get('reportDate') or datetime.utcnow().strftime('%Y-%m-%d')
+
+    new_case = Case(
+        id           = gen_id(),
+        area         = area,
+        date         = report_date,
+        seq          = d.get('seq', ''),
+        job_no       = d.get('workOrderNo', ''),
+        sap_no       = d.get('sapNo', ''),
+        notify_time  = d.get('notifyTime', ''),
+        std          = d.get('std', ''),
+        approve_time = d.get('approveTime', ''),
+        arrive_time  = d.get('arriveTime', ''),
+        start_time   = d.get('startTime', ''),
+        close_time   = d.get('closeTime', ''),
+        location     = (d.get('area', '') + ' ' + d.get('location', '')).strip(),
+        problem      = d.get('problem', ''),
+        solution     = d.get('solution', ''),
+        technician   = d.get('technician', ''),
+    )
+    db.session.add(new_case)
+
+    pc.confirmed   = True
+    pc.updated_at  = datetime.utcnow()
+    db.session.commit()
+
+    return jsonify(action='confirmed', caseId=new_case.id)
+
+
+@app.route('/api/pending-cases/<int:pid>', methods=['DELETE'])
+@login_required
+def delete_pending_case(pid):
+    """ลบ pending case ทิ้ง (ไม่ confirm)"""
+    pc = PendingCase.query.get_or_404(pid)
+    db.session.delete(pc)
+    db.session.commit()
+    return jsonify(action='deleted')
 
 
 def handle_500(e):
