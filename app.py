@@ -215,6 +215,54 @@ def to_thai_date(iso_str):
 # col N: เวลามาตรฐานในรูปแบบ ชม:นาที สำหรับ Excel
 STD_HOURS = {'A':'0:30','B':'3:00','C':'24:00','D':'168:00','E':'336:00','F':'720:00'}
 
+# ── KPI คำนวณฝั่ง Server (ใช้ตอน confirm pending case) ─────────────────────
+STD_KPI1_MIN = {'A': 30, 'B': 180, 'C': 1440, 'D': 10080, 'E': 20160, 'F': 43200}
+STD_KPI2_MIN = {'A': 30, 'B': 180, 'C': 1440, 'D': 10080, 'E': 20160, 'F': 43200}
+
+def _to_min(t: str):
+    """'HH:MM' → นาที (int) หรือ None"""
+    if not t: return None
+    t = t.strip().replace('.', ':')
+    parts = t.split(':')
+    try:
+        return int(parts[0]) * 60 + int(parts[1])
+    except Exception:
+        return None
+
+def _job_count_from_solution(solution: str) -> int:
+    """นับจำนวนหลอดจาก solution: '10หลอด' → 10, ไม่มี → 1"""
+    import re
+    if not solution: return 1
+    m = re.search(r'(\d+)\s*หลอด', solution)
+    return max(1, int(m.group(1))) if m else 1
+
+def calc_kpi_server(approve_time, arrive_time, start_time, close_time, std, solution):
+    """คำนวณ KPI1 และ KPI2 ฝั่ง Python
+    KPI1: เวลาอนุมัติ → เวลาถึงหน้างาน ≤ มาตรฐาน
+    KPI2: เวลาเริ่มแก้ไข → เวลาปิดงาน (× jobCount) ≤ มาตรฐาน
+    คืน tuple (kpi1, kpi2) เป็น 'pass'/'fail'/None
+    """
+    std_min = STD_KPI1_MIN.get(std)
+
+    # KPI1
+    kpi1 = None
+    a = _to_min(approve_time)
+    b = _to_min(arrive_time)
+    if a is not None and b is not None and std_min is not None:
+        diff = b - a if b >= a else b + 1440 - a   # handle overnight
+        kpi1 = 'pass' if diff <= std_min else 'fail'
+
+    # KPI2
+    kpi2 = None
+    s = _to_min(start_time) if start_time else _to_min(arrive_time)
+    c = _to_min(close_time)
+    if s is not None and c is not None and std_min is not None:
+        job_count = _job_count_from_solution(solution)
+        diff = c - s if c >= s else c + 1440 - s
+        kpi2 = 'pass' if diff <= std_min * job_count else 'fail'
+
+    return kpi1, kpi2
+
 def fmt_response_decimal(raw):
     """แปลงเวลาตอบรับเป็น decimal string: '15นาที' → '0.15', '20นาที' → '0.20'
     ส่งกลับเป็น string เพื่อป้องกัน Excel แปลงเป็น time format อัตโนมัติ"""
@@ -1227,6 +1275,17 @@ def confirm_pending_case(pid):
 
     seq = d.get('seq', '')
 
+    approve_time  = d.get('approveTime', '')
+    arrive_time   = d.get('arriveTime', '')
+    start_time    = d.get('startTime', '')
+    close_time    = d.get('closeTime', '')
+    std_val       = d.get('std', '')
+    solution_val  = d.get('solution') or d.get('cause', '')
+
+    kpi1_val, kpi2_val = calc_kpi_server(
+        approve_time, arrive_time, start_time, close_time, std_val, solution_val
+    )
+
     new_case = Case(
         id           = gen_id(),
         area         = area,
@@ -1235,19 +1294,21 @@ def confirm_pending_case(pid):
         job_no       = d.get('workOrderNo', ''),
         sap_no       = d.get('sapNo', ''),
         notify_time  = d.get('notifyTime', ''),
-        std          = d.get('std', ''),
-        approve_time = d.get('approveTime', ''),
-        arrive_time  = d.get('arriveTime', ''),
-        start_time   = d.get('startTime', ''),
-        close_time   = d.get('closeTime', ''),
+        std          = std_val,
+        approve_time = approve_time,
+        arrive_time  = arrive_time,
+        start_time   = start_time,
+        close_time   = close_time,
         location     = (d.get('area', '') + ' ' + d.get('location', '')).strip(),
         problem      = d.get('problem', ''),
-        solution     = d.get('solution') or d.get('cause', ''),
+        solution     = solution_val,
         technician   = d.get('technician', ''),
         kpi_val      = d.get('kpi', ''),
         response_time= d.get('responseTime', ''),
         reporter     = d.get('reporter', ''),
         receiver     = d.get('receiver', ''),
+        kpi1         = kpi1_val,
+        kpi2         = kpi2_val,
     )
     db.session.add(new_case)
 
