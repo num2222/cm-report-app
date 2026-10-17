@@ -1238,8 +1238,12 @@ def confirm_pending_case(pid):
         close_time   = d.get('closeTime', ''),
         location     = (d.get('area', '') + ' ' + d.get('location', '')).strip(),
         problem      = d.get('problem', ''),
-        solution     = d.get('solution', ''),
+        solution     = d.get('solution') or d.get('cause', ''),
         technician   = d.get('technician', ''),
+        kpi_val      = d.get('kpi', ''),
+        response_time= d.get('responseTime', ''),
+        reporter     = d.get('reporter', ''),
+        receiver     = d.get('receiver', ''),
     )
     db.session.add(new_case)
 
