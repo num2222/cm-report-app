@@ -1208,25 +1208,25 @@ def line_import():
     if not job_code:
         return jsonify(error='jobCode required'), 400
 
-    # หา pending ที่ยังไม่ confirm — ใช้ job_code เป็น key หลัก
-    # ถ้า report_date มีค่า → match ทั้ง job_code + report_date
-    # ถ้า report_date ว่าง (Bot ไม่ได้ parse วันที่ได้) → match แค่ job_code เพื่อ merge เข้าตัวเดิม
-    if report_date:
+    work_order_no = (d.get('workOrderNo') or '').strip()
+
+    # หา pending ที่ยังไม่ confirm — ลำดับการ match:
+    # 1. job_code + workOrderNo (เลขที่ใบงาน) — แม่นยำที่สุด
+    # 2. job_code เพียงอย่างเดียว — fallback สำหรับเคสที่ไม่มีเลขใบงาน
+    # ไม่ใช้ report_date เป็น key เพราะวันที่อาจต่างกันระหว่างข้อความที่ 1 และ 2
+    existing = None
+    if work_order_no:
         existing = PendingCase.query.filter_by(
             job_code=job_code,
             confirmed=False
         ).filter(
-            db.or_(
-                PendingCase.report_date == report_date,
-                PendingCase.report_date == '',
-                PendingCase.report_date == None
-            )
+            PendingCase.raw_data.contains(work_order_no)
         ).first()
-    else:
+    if not existing:
         existing = PendingCase.query.filter_by(
             job_code=job_code,
             confirmed=False
-        ).first()
+        ).order_by(PendingCase.created_at.desc()).first()
 
     if existing:
         # merge ข้อมูลใหม่ทับเฉพาะ field ที่ไม่ว่าง
