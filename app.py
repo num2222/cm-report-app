@@ -1208,18 +1208,36 @@ def line_import():
     if not job_code:
         return jsonify(error='jobCode required'), 400
 
-    # หา pending ที่ยังไม่ confirm (job_code + วันที่เดิม)
-    existing = PendingCase.query.filter_by(
-        job_code=job_code,
-        report_date=report_date,
-        confirmed=False
-    ).first()
+    # หา pending ที่ยังไม่ confirm — ใช้ job_code เป็น key หลัก
+    # ถ้า report_date มีค่า → match ทั้ง job_code + report_date
+    # ถ้า report_date ว่าง (Bot ไม่ได้ parse วันที่ได้) → match แค่ job_code เพื่อ merge เข้าตัวเดิม
+    if report_date:
+        existing = PendingCase.query.filter_by(
+            job_code=job_code,
+            confirmed=False
+        ).filter(
+            db.or_(
+                PendingCase.report_date == report_date,
+                PendingCase.report_date == '',
+                PendingCase.report_date == None
+            )
+        ).first()
+    else:
+        existing = PendingCase.query.filter_by(
+            job_code=job_code,
+            confirmed=False
+        ).first()
 
     if existing:
         # merge ข้อมูลใหม่ทับเฉพาะ field ที่ไม่ว่าง
+        # NEVER_OVERWRITE: field เหล่านี้ห้าม overwrite ถ้ามีค่าอยู่แล้ว
+        #   - approveTime: ต้องเป็นเวลาจากข้อความแรกเสมอ (ข้อความที่ 2 reply → timestamp ผิด)
+        #   - reportDate:  วันที่จากข้อความแรก ห้าม overwrite แม้ข้อความที่ 2 ส่งวันที่ใหม่
+        #   - notifyTime:  เวลารับแจ้งจากข้อความแรก
+        NEVER_OVERWRITE = {'approveTime', 'reportDate', 'notifyTime'}
         old = json.loads(existing.raw_data or '{}')
         for k, v in d.items():
-            if v:  # เขียนทับเฉพาะค่าที่มีข้อมูล
+            if v and (k not in NEVER_OVERWRITE or not old.get(k)):
                 old[k] = v
         existing.raw_data   = json.dumps(old, ensure_ascii=False)
         existing.updated_at = datetime.utcnow()
