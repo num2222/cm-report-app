@@ -1257,9 +1257,12 @@ def line_import():
 @app.route('/api/pending-cases', methods=['GET'])
 @login_required
 def get_pending_cases():
-    """ดึงรายการ pending cases ที่ยังไม่ confirm"""
-    rows = PendingCase.query.filter_by(confirmed=False)\
-                            .order_by(PendingCase.created_at.desc()).all()
+    """ดึงรายการ pending cases ที่ยังไม่ confirm (กรองวันที่ได้ด้วย ?date=YYYY-MM-DD)"""
+    date_filter = request.args.get('date', '').strip()
+    q = PendingCase.query.filter_by(confirmed=False)
+    if date_filter:
+        q = q.filter_by(report_date=date_filter)
+    rows = q.order_by(PendingCase.created_at.desc()).all()
     result = []
     for r in rows:
         data = json.loads(r.raw_data or '{}')
@@ -1282,7 +1285,26 @@ def confirm_pending_case(pid):
     if pc.confirmed:
         return jsonify(error='already confirmed'), 400
 
+    # รับ override จาก body (ถ้า frontend ส่งมา) ก่อน merge กับ raw_data
+    override = request.json or {}
     d = json.loads(pc.raw_data or '{}')
+    for k in ('reportDate', 'workOrderNo', 'sapNo'):
+        if override.get(k) is not None:
+            d[k] = override[k]
+
+    # ตรวจ duplicate ก่อน confirm
+    work_order = (d.get('workOrderNo') or '').strip()
+    sap_no_chk = (d.get('sapNo') or '').strip()
+    if work_order:
+        dup = Case.query.filter_by(job_no=work_order).first()
+        if dup:
+            return jsonify(error=f'เลขที่ใบงาน {work_order} มีอยู่ในระบบแล้ว (Case {dup.id})',
+                           duplicateType='workOrderNo', existingId=dup.id), 409
+    if sap_no_chk:
+        dup = Case.query.filter_by(sap_no=sap_no_chk).first()
+        if dup:
+            return jsonify(error=f'SAP No. {sap_no_chk} มีอยู่ในระบบแล้ว (Case {dup.id})',
+                           duplicateType='sapNo', existingId=dup.id), 409
 
     # แปลง jobCode → area + วันที่
     job_code = d.get('jobCode', '')
@@ -1335,6 +1357,29 @@ def confirm_pending_case(pid):
     db.session.commit()
 
     return jsonify(action='confirmed', caseId=new_case.id)
+
+
+@app.route('/api/pending-cases/<int:pid>', methods=['PATCH'])
+@login_required
+def patch_pending_case(pid):
+    """แก้ไขข้อมูล pending case ก่อน confirm (reportDate, workOrderNo, sapNo)"""
+    pc = PendingCase.query.get_or_404(pid)
+    if pc.confirmed:
+        return jsonify(error='already confirmed'), 400
+    body = request.json or {}
+    # อัปเดต raw_data
+    d = json.loads(pc.raw_data or '{}')
+    allowed = {'reportDate', 'workOrderNo', 'sapNo'}
+    for k in allowed:
+        if k in body:
+            d[k] = (body[k] or '').strip()
+    pc.raw_data = json.dumps(d, ensure_ascii=False)
+    # อัปเดต report_date column ด้วยถ้า reportDate เปลี่ยน
+    if 'reportDate' in body:
+        pc.report_date = (body['reportDate'] or '').strip()
+    pc.updated_at = datetime.utcnow()
+    db.session.commit()
+    return jsonify(action='patched', id=pc.id)
 
 
 @app.route('/api/pending-cases/<int:pid>', methods=['DELETE'])
