@@ -1044,12 +1044,14 @@ def export_pending():
     ws['A2'].alignment = Alignment(horizontal='center')
     ws['A2'].font = Font(size=11, color='555555')
 
-    headers = ['พื้นที่','วันที่','ลำดับ','Job No.','SAP No.','เวลาแจ้ง','บริเวณ','ปัญหา','KPI1','KPI2']
-    col_widths = [8,10,6,10,12,9,24,32,7,7]
+    headers = ['พื้นที่','วันที่','ลำดับ','Job No.','SAP No.','เวลาแจ้ง','บริเวณ','ปัญหา','ช่างผู้ซ่อม','KPI1','KPI2']
+    col_widths = [8,10,6,10,12,9,24,32,18,7,7]
     hdr_fill = PatternFill('solid', fgColor='7B2D00')
     hdr_font = Font(color='FFFFFF', bold=True, size=11)
     thin = Border(left=Side(style='thin'), right=Side(style='thin'),
                   top=Side(style='thin'), bottom=Side(style='thin'))
+    ws.merge_cells('A1:K1')
+    ws.merge_cells('A2:K2')
     for ci,(h,w) in enumerate(zip(headers, col_widths), 1):
         cell = ws.cell(row=3, column=ci, value=h)
         cell.fill = hdr_fill; cell.font = hdr_font
@@ -1070,17 +1072,18 @@ def export_pending():
             c.get('area',''), fmt_be(c.get('date','')), c.get('seq',''),
             c.get('jobNo',''), c.get('sapNo',''), c.get('notifyTime',''),
             c.get('location',''), c.get('problem',''),
+            c.get('technician',''),
             kpi_sym_map.get(k1,''), kpi_sym_map.get(k2,'')
         ]
-        aligns = [center,center,center,center,center,center,wrap,wrap,center,center]
+        aligns = [center,center,center,center,center,center,wrap,wrap,wrap,center,center]
         for ci,(v,al) in enumerate(zip(vals, aligns), 1):
             cell = ws.cell(row=ri, column=ci, value=v)
             cell.alignment = al; cell.border = thin
-            if ci in (9,10):
+            if ci in (10,11):
                 cell.font = pass_font if v=='✓' else (fail_font if v=='✗' else Font(size=11))
 
     sr = len(cases) + 4
-    ws.merge_cells(f'A{sr}:H{sr}')
+    ws.merge_cells(f'A{sr}:I{sr}')
     ws[f'A{sr}'] = f'รวมค้างดำเนินการ {len(cases)} เคส'
     ws[f'A{sr}'].font = Font(bold=True, size=11)
     ws[f'A{sr}'].alignment = Alignment(horizontal='right', vertical='center')
