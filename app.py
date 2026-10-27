@@ -597,28 +597,32 @@ def export_daily():
         ws    = wb[area]
         cases = sorted([c for c in cases_all if c.get('area')==area], key=lambda c: _seq_num(c))
         area_cases[area] = cases
-        done  = [c for c in cases if c.get('closeTime')]
+        done     = [c for c in cases if c.get('closeTime') or c.get('cancelled')]
+        not_done = [c for c in cases if not c.get('closeTime') and not c.get('cancelled')]
         # วันที่แสดงเป็นไทย "27 กรกฎาคม 2569" โดยใช้ datetime + numfmt
         _dt_cell = ws.cell(row=4,column=6)
         _dt_cell.value = to_thai_date(date_iso)
         _dt_cell.number_format = THAI_DATE_NUMFMT
         ws.cell(row=4,column=11).value = len(done)
-        ws.cell(row=4,column=16).value = len(cases)-len(done)
+        ws.cell(row=4,column=16).value = len(not_done)
         _write_rows(ws, cases, start_row=8)
     ws_cm = wb['Daily CM']
     all_c = [c for a in areas for c in area_cases[a]]
-    all_d = [c for c in all_c if c.get('closeTime')]
+    all_d    = [c for c in all_c if c.get('closeTime') or c.get('cancelled')]
+    all_nd   = [c for c in all_c if not c.get('closeTime') and not c.get('cancelled')]
     _cm_dt = ws_cm.cell(row=7,column=5)
     _cm_dt.value = to_thai_date(date_iso)
     _cm_dt.number_format = THAI_DATE_NUMFMT
     ws_cm.cell(row=13,column=8).value = len(all_c)
     ws_cm.cell(row=14,column=8).value = len(all_d)
-    ws_cm.cell(row=15,column=8).value = len(all_c)-len(all_d)
+    ws_cm.cell(row=15,column=8).value = len(all_nd)
     for area,(r1,r2,r3) in {'MTB':(19,20,21),'Z2':(23,24,25),'FZ':(27,28,29),'SAT1':(31,32,33)}.items():
-        ac=area_cases[area]; ad=[c for c in ac if c.get('closeTime')]
+        ac=area_cases[area]
+        ad=[c for c in ac if c.get('closeTime') or c.get('cancelled')]
+        and_=[c for c in ac if not c.get('closeTime') and not c.get('cancelled')]
         ws_cm.cell(row=r1,column=10).value=len(ac)
         ws_cm.cell(row=r2,column=10).value=len(ad)
-        ws_cm.cell(row=r3,column=10).value=len(ac)-len(ad)
+        ws_cm.cell(row=r3,column=10).value=len(and_)
     # KPI1: ยกเลิกใบงาน = ผ่านทั้งหมด (_kpi1_export จัดการแล้ว)
     k1p=sum(1 for c in all_c if _kpi1_export(c)=='pass')
     k1f=sum(1 for c in all_c if _kpi1_export(c)=='fail')
@@ -1030,7 +1034,6 @@ def export_pending():
     ws = wb.active
     ws.title = 'เคสค้างดำเนินการ'
 
-    ws.merge_cells('A1:J1')
     ws['A1'] = 'เคสค้างดำเนินการ CM — ระบบไฟฟ้าแรงดันต่ำ (LV System)'
     ws['A1'].font = Font(bold=True, size=13)
     ws['A1'].alignment = Alignment(horizontal='center')
@@ -1039,19 +1042,18 @@ def export_pending():
     area = filters.get('area','')
     if area and area != 'ALL': filter_desc.append(f"พื้นที่: {area}")
     if filters.get('month'): filter_desc.append(f"เดือน: {filters['month']}")
-    ws.merge_cells('A2:J2')
     ws['A2'] = '  '.join(filter_desc) if filter_desc else 'ทุกพื้นที่ / ทุกเดือน'
     ws['A2'].alignment = Alignment(horizontal='center')
     ws['A2'].font = Font(size=11, color='555555')
 
-    headers = ['พื้นที่','วันที่','ลำดับ','Job No.','SAP No.','เวลาแจ้ง','บริเวณ','ปัญหา','ช่างผู้ซ่อม','KPI1','KPI2']
-    col_widths = [8,10,6,10,12,9,24,32,18,7,7]
+    headers = ['พื้นที่','วันที่','ลำดับ','Job No.','SAP No.','เวลาแจ้ง','บริเวณ','ปัญหา','ช่างผู้ซ่อม','KPI1','KPI2','เหตุผลที่ค้าง']
+    col_widths = [8,10,6,10,12,9,24,32,18,7,7,30]
     hdr_fill = PatternFill('solid', fgColor='7B2D00')
     hdr_font = Font(color='FFFFFF', bold=True, size=11)
     thin = Border(left=Side(style='thin'), right=Side(style='thin'),
                   top=Side(style='thin'), bottom=Side(style='thin'))
-    ws.merge_cells('A1:K1')
-    ws.merge_cells('A2:K2')
+    ws.merge_cells('A1:L1')
+    ws.merge_cells('A2:L2')
     for ci,(h,w) in enumerate(zip(headers, col_widths), 1):
         cell = ws.cell(row=3, column=ci, value=h)
         cell.fill = hdr_fill; cell.font = hdr_font
@@ -1073,9 +1075,10 @@ def export_pending():
             c.get('jobNo',''), c.get('sapNo',''), c.get('notifyTime',''),
             c.get('location',''), c.get('problem',''),
             c.get('technician',''),
-            kpi_sym_map.get(k1,''), kpi_sym_map.get(k2,'')
+            kpi_sym_map.get(k1,''), kpi_sym_map.get(k2,''),
+            c.get('pendingReason','')
         ]
-        aligns = [center,center,center,center,center,center,wrap,wrap,wrap,center,center]
+        aligns = [center,center,center,center,center,center,wrap,wrap,wrap,center,center,wrap]
         for ci,(v,al) in enumerate(zip(vals, aligns), 1):
             cell = ws.cell(row=ri, column=ci, value=v)
             cell.alignment = al; cell.border = thin
@@ -1083,7 +1086,7 @@ def export_pending():
                 cell.font = pass_font if v=='✓' else (fail_font if v=='✗' else Font(size=11))
 
     sr = len(cases) + 4
-    ws.merge_cells(f'A{sr}:I{sr}')
+    ws.merge_cells(f'A{sr}:J{sr}')
     ws[f'A{sr}'] = f'รวมค้างดำเนินการ {len(cases)} เคส'
     ws[f'A{sr}'].font = Font(bold=True, size=11)
     ws[f'A{sr}'].alignment = Alignment(horizontal='right', vertical='center')
