@@ -883,7 +883,9 @@ function renderDashboard() {
     dbg.style.display = 'none';
   }
 
-  const total = cases.length, done = cases.filter(c=>c.closeTime).length;
+  const total = cases.length;
+  const done  = cases.filter(c=>c.closeTime || c.cancelled).length;
+  const notDone = cases.filter(c=>!c.closeTime && !c.cancelled).length;
   const k1p=cases.filter(c=>c.kpi1==='pass').length, k1t=cases.filter(c=>c.kpi1).length;
   const k2p=cases.filter(c=>kpi2Eff(c)==='pass').length, k2t=cases.filter(c=>kpi2Eff(c)).length;
   const k3p=cases.filter(c=>c.kpi3==='pass').length, k3t=cases.filter(c=>c.kpi3).length;
@@ -891,7 +893,7 @@ function renderDashboard() {
   document.getElementById('dash-stats').innerHTML = `
     <div class="stat"><div class="stat-num">${total}</div><div class="stat-label">ปริมาณงานทั้งหมด</div></div>
     <div class="stat green"><div class="stat-num">${done}</div><div class="stat-label">แก้ไขเสร็จแล้ว</div></div>
-    <div class="stat orange"><div class="stat-num">${total-done}</div><div class="stat-label">ยังไม่แล้วเสร็จ</div></div>
+    <div class="stat orange"><div class="stat-num">${notDone}</div><div class="stat-label">ยังไม่แล้วเสร็จ</div></div>
     <div class="stat"><div class="stat-num">${pct(k1p,k1t)}%</div><div class="stat-label">KPI1 ผ่าน (${k1p}/${k1t})</div></div>
     <div class="stat"><div class="stat-num">${pct(k2p,k2t)}%</div><div class="stat-label">KPI2 ผ่าน (${k2p}/${k2t})</div></div>
     <div class="stat"><div class="stat-num">${pct(k3p,k3t)}%</div><div class="stat-label">KPI3 ผ่าน (${k3p}/${k3t})</div></div>`;
