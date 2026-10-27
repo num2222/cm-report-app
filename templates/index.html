@@ -195,6 +195,7 @@ textarea.paste-box { width: 100%; height: 200px; font-family: 'Courier New', mon
         <div class="form-group full"><label>บริเวณ / สถานที่</label><input type="text" id="f-location" placeholder="ทิศเหนือ หน้าสุขาชาย-หญิง"></div>
         <div class="form-group full"><label>ปัญหาหน้างาน</label><input type="text" id="f-problem" placeholder="หลอดไฟยาวดับ 1 หลอด"></div>
         <div class="form-group full"><label>การแก้ไข</label><input type="text" id="f-solution" placeholder="เปลี่ยนหลอด LED T8 18W 6500K"></div>
+        <div class="form-group full"><label>ปัญหาและอุปสรรคในการทำงาน</label><input type="text" id="f-work-obstacle" placeholder="รอเจ้าหน้าที่ จป. เข้าตรวจเช็ค"></div>
         <div class="form-group"><label>ผู้แจ้ง</label><input type="text" id="f-reporter"></div>
         <div class="form-group"><label>ผู้รับแจ้ง</label><input type="text" id="f-receiver"></div>
         <div class="form-group"><label>ช่างผู้ซ่อม</label><input type="text" id="f-technician"></div>
@@ -691,6 +692,7 @@ function parseLine() {
     location: locationRaw,
     problem: extractExact('ปัญหาหน้างาน'),
     solution: extractExact('การแก้ไข'),
+    workObstacle: extractExact('ปัญหาและอุปสรรคในการทำงาน'),
     reporter: extract('ผู้แจ้ง'),
     receiver: extract('ผู้รับแจ้ง'),
     technician: extract('ช่างผู้ทำการซ่อม'),
@@ -834,6 +836,7 @@ async function saveCase() {
     location: document.getElementById('f-location').value,
     problem: document.getElementById('f-problem').value,
     solution: document.getElementById('f-solution').value,
+    workObstacle: document.getElementById('f-work-obstacle').value,
     reporter: document.getElementById('f-reporter').value,
     receiver: document.getElementById('f-receiver').value,
     technician: document.getElementById('f-technician').value,
@@ -853,7 +856,7 @@ async function saveCase() {
 function clearForm() {
   ['f-seq','f-jobno','f-sapno','f-notify-time','f-kpi-val','f-response-time',
    'f-approve-time','f-arrive-time','f-start-time','f-close-time',
-   'f-location','f-problem','f-solution','f-reporter','f-receiver','f-technician']
+   'f-location','f-problem','f-solution','f-work-obstacle','f-reporter','f-receiver','f-technician']
   .forEach(id => { const el = document.getElementById(id); if(el) el.value = ''; });
   document.getElementById('f-std').value = '';
   document.getElementById('f-kpi3').value = '';
@@ -1039,6 +1042,7 @@ function openEdit(id) {
     ['location','บริเวณ / สถานที่','text',null],
     ['problem','ปัญหาหน้างาน','text',null],
     ['solution','การแก้ไข','text',null],
+    ['workObstacle','ปัญหาและอุปสรรคในการทำงาน','text',null],
     ['jobCount','จำนวน Job (หลอด/งาน)','number',null],
     ['technician','ช่างผู้ซ่อม','text',null],
     ['reporter','ผู้แจ้ง','text',null],
@@ -1120,7 +1124,7 @@ async function saveEdit() {
   if(!c) return;
   const keys = ['area','date','seq','jobNo','sapNo','notifyTime','kpiVal','responseTime','std',
                 'approveTime','arriveTime','startTime','closeTime','closeDate','kpi3',
-                'location','problem','solution','jobCount','technician','reporter','receiver'];
+                'location','problem','solution','workObstacle','jobCount','technician','reporter','receiver'];
   keys.forEach(f => { const el = document.getElementById('edit-'+f); if(el) c[f] = el.value; });
 
   // ── ยกเลิกใบงาน ─────────────────────────────────────────────
