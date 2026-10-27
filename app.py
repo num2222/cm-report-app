@@ -74,6 +74,7 @@ class Case(db.Model):
     sap_status    = db.Column(db.String(20), default='')
     sap_fail_reason = db.Column(db.Text)
     pending_reason  = db.Column(db.Text)
+    work_obstacle   = db.Column(db.Text)   # ปัญหาและอุปสรรคในการทำงาน
     # ── ยกเลิกใบงาน ───────────────────────────────────────
     cancelled     = db.Column(db.Boolean, default=False)
     job_count     = db.Column(db.Integer, default=1)
@@ -96,6 +97,7 @@ class Case(db.Model):
             'sapStatus': self.sap_status or '',
             'sapFailReason': self.sap_fail_reason or '',
             'pendingReason': self.pending_reason or '',
+            'workObstacle': self.work_obstacle or '',
             'cancelled': bool(self.cancelled),
             'jobCount': self.job_count if self.job_count is not None else 1,
         }
@@ -119,6 +121,7 @@ with app.app_context():
         "ALTER TABLE cases ADD COLUMN IF NOT EXISTS sap_status VARCHAR(20) DEFAULT ''",
         "ALTER TABLE cases ADD COLUMN IF NOT EXISTS sap_fail_reason TEXT",
         "ALTER TABLE cases ADD COLUMN IF NOT EXISTS pending_reason TEXT",
+        "ALTER TABLE cases ADD COLUMN IF NOT EXISTS work_obstacle TEXT",
         "ALTER TABLE cases ADD COLUMN IF NOT EXISTS cancelled BOOLEAN DEFAULT FALSE",
         "ALTER TABLE cases ADD COLUMN IF NOT EXISTS close_date VARCHAR(10)",
         "ALTER TABLE cases ADD COLUMN IF NOT EXISTS job_count INTEGER DEFAULT 1",
@@ -325,6 +328,7 @@ def apply_dict(c, d):
 
     c.sap_fail_reason = d.get('sapFailReason', '') or ''
     c.pending_reason  = d.get('pendingReason', '') or ''
+    c.work_obstacle   = d.get('workObstacle', '') or ''
     c.cancelled       = bool(d.get('cancelled', False))
     return c
 
@@ -541,17 +545,25 @@ def _write_rows(ws, cases, start_row=8):
         set_cell(ws, r, 15, c.get('closeTime',''),     align=center)
 
         # col Q = หมายเหตุ
-        close_date = c.get('closeDate','')
+        close_date   = c.get('closeDate','')
+        obstacle     = c.get('workObstacle','')
         if is_cancelled:
             set_cell(ws, r, 16, kpi_sym('pass'), font=kpi_font, align=center)  # col P KPI2 ✓
-            set_cell(ws, r, 17, 'ยกเลิกใบงาน')
+            parts = ['ยกเลิกใบงาน']
+            if obstacle: parts.append(obstacle)
+            set_cell(ws, r, 17, ' / '.join(parts), align=wrap)
         else:
             kpi2_val = _kpi2_export(c)
             set_cell(ws, r, 16, kpi_sym(kpi2_val),
                      font=kpi_font if kpi2_val=='pass' else kpi_font_fail,
                      align=center)
+            remark_parts = []
             if close_date and close_date != c.get('date',''):
-                set_cell(ws, r, 17, f'ปิดงานวันที่ {fmt_be(close_date)}')
+                remark_parts.append(f'ปิดงานวันที่ {fmt_be(close_date)}')
+            if obstacle:
+                remark_parts.append(obstacle)
+            if remark_parts:
+                set_cell(ws, r, 17, ' / '.join(remark_parts), align=wrap)
 
 
 def _add_logo_to_wb(wb, tmpl_bytes):
